@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { helpRequestIngestSchema, ingestOrderSchema, manualOrderSchema, quoteRequestSchema } from "@/lib/schemas";
+import {
+  helpRequestIngestSchema,
+  ingestOrderSchema,
+  manualOrderSchema,
+  orderEditSchema,
+  quoteRequestSchema,
+} from "@/lib/schemas";
 
 const validOrder = {
   sourceEventId: "order_12345678",
@@ -91,6 +97,27 @@ describe("manualOrderSchema", () => {
 
   it("still requires an address for delivery", () => {
     expect(manualOrderSchema.safeParse({ ...manual, delivery: { type: "domicilio" } }).success).toBe(false);
+  });
+});
+
+describe("orderEditSchema", () => {
+  const edit = {
+    requestId: "22222222-2222-4222-8222-222222222222",
+    operator: "Isabel",
+    customer: { name: "Don Luis", phone: "3001234567", document: "123456" },
+    delivery: { type: "domicilio", address: "Calle 5 # 10-20" },
+    paymentMethod: "Efectivo",
+    items: [{ name: "Tomate chonto", quantity: 2, unit: "lb" }],
+    notes: "Sin bolsa",
+  };
+
+  it("accepts all editable order fields", () => {
+    expect(orderEditSchema.parse(edit)).toMatchObject(edit);
+  });
+
+  it("keeps the delivery-address invariant on edits", () => {
+    expect(orderEditSchema.safeParse({ ...edit, delivery: { type: "domicilio" } }).success).toBe(false);
+    expect(orderEditSchema.safeParse({ ...edit, delivery: { type: "recogida" } }).success).toBe(true);
   });
 });
 

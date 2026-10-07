@@ -155,6 +155,58 @@ test("filters and opens the complete order detail", async ({ page }) => {
   );
 });
 
+test("edits a new order from its detail", async ({ page }) => {
+  let patched: Record<string, unknown> | null = null;
+  await page.route("**/api/orders/11111111-1111-4111-8111-111111111111", async (route) => {
+    if (route.request().method() !== "PATCH") return route.fallback();
+    patched = route.request().postDataJSON();
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        order: { ...order, customerName: "María Fernanda", notes: "Entregar en portería" },
+        returnedToPending: false,
+        quoteCleared: false,
+      }),
+    });
+  });
+
+  await page.goto("/panel?location=frutitodo-test&token=secret-test-token");
+  await page.getByRole("button", { name: /Ver detalle/ }).click();
+  await page.getByRole("button", { name: "Editar" }).click();
+  await expect(page.getByRole("heading", { name: "Editar pedido" })).toBeVisible();
+  await page.getByLabel("Nombre del cliente *").fill("María Fernanda");
+  await page.getByLabel("Observaciones").fill("Entregar en portería");
+  await page.getByRole("button", { name: "Guardar cambios" }).click();
+
+  await expect(page.getByText("FT-000021 actualizado")).toBeVisible();
+  expect(patched).toMatchObject({
+    customer: { name: "María Fernanda", phone: "+57 300 123 4567", document: "1020304050" },
+    notes: "Entregar en portería",
+  });
+});
+
+test("deletes a new order only after confirmation", async ({ page }) => {
+  let deleteCalls = 0;
+  await page.route("**/api/orders/11111111-1111-4111-8111-111111111111", async (route) => {
+    if (route.request().method() !== "DELETE") return route.fallback();
+    deleteCalls += 1;
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ deleted: true, id: order.id }),
+    });
+  });
+
+  await page.goto("/panel?location=frutitodo-test&token=secret-test-token");
+  await page.getByRole("button", { name: /Ver detalle/ }).click();
+  await page.getByRole("button", { name: "Eliminar" }).click();
+  await expect(page.getByRole("heading", { name: "Eliminar pedido" })).toBeVisible();
+  expect(deleteCalls).toBe(0);
+  await page.getByRole("button", { name: "Eliminar pedido" }).click();
+
+  await expect(page.getByText("Pedido FT-000021 eliminado")).toBeVisible();
+  expect(deleteCalls).toBe(1);
+});
+
 test("prints the operator passed by the menu link on the ticket", async ({ page }) => {
   await page.goto("/panel?location=frutitodo-test&token=secret-test-token&user=Isabel");
   await expect(page.getByRole("button", { name: /Isabel/ })).toBeVisible();

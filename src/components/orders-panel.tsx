@@ -15,6 +15,7 @@ import {
   MapPin,
   MessageCircle,
   PackageCheck,
+  Pencil,
   Phone,
   Plus,
   Printer,
@@ -149,6 +150,8 @@ export function OrdersPanel() {
   const [confirmPrintedOrder, setConfirmPrintedOrder] = useState<Order | null>(null);
   const [dispatchOrder, setDispatchOrder] = useState<Order | null>(null);
   const [quoteOrder, setQuoteOrder] = useState<Order | null>(null);
+  const [editOrder, setEditOrder] = useState<Order | null>(null);
+  const [deleteOrder, setDeleteOrder] = useState<Order | null>(null);
   const [manualOrderOpen, setManualOrderOpen] = useState(false);
   const [actionBusy, setActionBusy] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
@@ -348,6 +351,47 @@ export function OrdersPanel() {
       if (tab === "pending") await loadData(true);
       else changeTab("pending");
     }, "No fue posible crear el pedido");
+
+  const saveOrderEdit = (payload: Record<string, unknown>) =>
+    runAction(async () => {
+      if (!editOrder || !credentials) return;
+      const response = await fetch(`/api/orders/${editOrder.id}`, {
+        method: "PATCH",
+        headers: { ...authHeaders(credentials), "Content-Type": "application/json" },
+        body: JSON.stringify({ operator, ...payload }),
+      });
+      if (!response.ok) throw new Error(await responseMessage(response));
+      const result = (await response.json()) as {
+        order: Order;
+        returnedToPending: boolean;
+        quoteCleared: boolean;
+      };
+      setEditOrder(null);
+      setSelectedOrder(null);
+      setNotice(
+        result.returnedToPending
+          ? `${result.order.orderNumber} actualizado y devuelto a Nuevos para reimprimir`
+          : `${result.order.orderNumber} actualizado${result.quoteCleared ? " · vuelve a cotizar los productos" : ""}`,
+      );
+      if (tab === "pending") await loadData(true);
+      else changeTab("pending");
+    }, "No fue posible editar el pedido");
+
+  const confirmDelete = () =>
+    runAction(async () => {
+      if (!deleteOrder || !credentials) return;
+      const response = await fetch(`/api/orders/${deleteOrder.id}`, {
+        method: "DELETE",
+        headers: { ...authHeaders(credentials), "Content-Type": "application/json" },
+        body: JSON.stringify({ requestId: crypto.randomUUID(), operator }),
+      });
+      if (!response.ok) throw new Error(await responseMessage(response));
+      const number = deleteOrder.orderNumber;
+      setDeleteOrder(null);
+      setSelectedOrder(null);
+      setNotice(`Pedido ${number} eliminado`);
+      await loadData(true);
+    }, "No fue posible eliminar el pedido");
 
   const resolveHelp = (helpRequest: HelpRequest) =>
     runAction(async () => {
@@ -653,6 +697,14 @@ export function OrdersPanel() {
           onPrint={beginPrint}
           onDispatch={setDispatchOrder}
           onQuote={setQuoteOrder}
+          onEdit={(order) => {
+            setSelectedOrder(null);
+            window.setTimeout(() => setEditOrder(order), 0);
+          }}
+          onDelete={(order) => {
+            setSelectedOrder(null);
+            window.setTimeout(() => setDeleteOrder(order), 0);
+          }}
         />
       ) : null}
 
@@ -693,12 +745,35 @@ export function OrdersPanel() {
         />
       ) : null}
 
+      {editOrder && credentials ? (
+        <OrderFormModal
+          order={editOrder}
+          credentials={credentials}
+          busy={actionBusy}
+          onCancel={() => setEditOrder(null)}
+          onSave={(payload) => void saveOrderEdit(payload)}
+        />
+      ) : null}
+
+      {deleteOrder ? (
+        <ConfirmModal
+          title="Eliminar pedido"
+          description={`Se eliminará ${deleteOrder.orderNumber} de forma permanente. Esta acción no se puede deshacer.`}
+          confirmLabel="Eliminar pedido"
+          icon={<Trash2 size={22} />}
+          busy={actionBusy}
+          danger
+          onCancel={() => setDeleteOrder(null)}
+          onConfirm={() => void confirmDelete()}
+        />
+      ) : null}
+
       {manualOrderOpen && credentials ? (
-        <ManualOrderModal
+        <OrderFormModal
           credentials={credentials}
           busy={actionBusy}
           onCancel={() => setManualOrderOpen(false)}
-          onCreate={(payload) => void createManualOrder(payload)}
+          onSave={(payload) => void createManualOrder(payload)}
         />
       ) : null}
 
@@ -981,6 +1056,8 @@ function OrderModal({
   onPrint,
   onDispatch,
   onQuote,
+  onEdit,
+  onDelete,
 }: {
   order: Order;
   conversationUrl: string | null;
@@ -988,6 +1065,8 @@ function OrderModal({
   onPrint: (order: Order) => void;
   onDispatch: (order: Order) => void;
   onQuote: (order: Order) => void;
+  onEdit: (order: Order) => void;
+  onDelete: (order: Order) => void;
 }) {
   return (
     <div className={styles.modalBackdrop} role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
@@ -1061,6 +1140,16 @@ function OrderModal({
           ) : null}
         </div>
         <footer className={styles.modalActions}>
+          {order.status !== "dispatched" ? (
+            <>
+              <button type="button" className={styles.detailsButton} onClick={() => onEdit(order)}>
+                <Pencil size={17} /> Editar
+              </button>
+              <button type="button" className={styles.deleteButton} onClick={() => onDelete(order)}>
+                <Trash2 size={17} /> Eliminar
+              </button>
+            </>
+          ) : null}
           <ConversationLink url={conversationUrl} variant="button" />
           <button type="button" className={styles.detailsButton} onClick={() => onQuote(order)}>
             <Receipt size={17} /> {order.quote ? "Editar cotización" : "Cotizar"}
@@ -1116,6 +1205,7 @@ function ConfirmModal({
   confirmLabel,
   icon,
   busy,
+  danger = false,
   onCancel,
   onConfirm,
 }: {
@@ -1124,6 +1214,7 @@ function ConfirmModal({
   confirmLabel: string;
   icon: React.ReactNode;
   busy: boolean;
+  danger?: boolean;
   onCancel: () => void;
   onConfirm: () => void;
 }) {
@@ -1135,7 +1226,12 @@ function ConfirmModal({
         <p>{description}</p>
         <div>
           <button type="button" className={styles.cancelButton} onClick={onCancel} disabled={busy}>Cancelar</button>
-          <button type="button" className={styles.confirmButton} onClick={onConfirm} disabled={busy}>
+          <button
+            type="button"
+            className={danger ? styles.deleteConfirmButton : styles.confirmButton}
+            onClick={onConfirm}
+            disabled={busy}
+          >
             {busy ? "Guardando..." : confirmLabel}
           </button>
         </div>
@@ -1146,30 +1242,41 @@ function ConfirmModal({
 
 type ItemDraft = { key: number; name: string; quantity: string; unit: string };
 
-function ManualOrderModal({
+function OrderFormModal({
+  order,
   credentials,
   busy,
   onCancel,
-  onCreate,
+  onSave,
 }: {
+  order?: Order;
   credentials: PanelCredentials;
   busy: boolean;
   onCancel: () => void;
-  onCreate: (payload: Record<string, unknown>) => void;
+  onSave: (payload: Record<string, unknown>) => void;
 }) {
   /* One key per form, so a double click or a retry after an error never creates two orders. */
   const [requestId] = useState(() => crypto.randomUUID());
-  const [name, setName] = useState("");
-  const [phone, setPhone] = useState("");
-  const [customerDocument, setCustomerDocument] = useState("");
-  const [deliveryType, setDeliveryType] = useState<DeliveryType>("domicilio");
-  const [address, setAddress] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState("");
-  const [notes, setNotes] = useState("");
-  const [items, setItems] = useState<ItemDraft[]>([{ key: 0, name: "", quantity: "1", unit: "" }]);
+  const [name, setName] = useState(order?.customerName || "");
+  const [phone, setPhone] = useState(order?.customerPhone || "");
+  const [customerDocument, setCustomerDocument] = useState(order?.customerDocument || "");
+  const [deliveryType, setDeliveryType] = useState<DeliveryType>(order?.deliveryType || "domicilio");
+  const [address, setAddress] = useState(order?.deliveryAddress || "");
+  const [paymentMethod, setPaymentMethod] = useState(order?.paymentMethod || "");
+  const [notes, setNotes] = useState(order?.notes || "");
+  const [items, setItems] = useState<ItemDraft[]>(
+    order
+      ? order.items.map((item, index) => ({
+          key: index,
+          name: item.name,
+          quantity: String(item.quantity).replace(".", ","),
+          unit: item.unit || "",
+        }))
+      : [{ key: 0, name: "", quantity: "1", unit: "" }],
+  );
   const [products, setProducts] = useState<Product[]>([]);
   const [productQuery, setProductQuery] = useState("");
-  const nextKey = useRef(1);
+  const nextKey = useRef(order?.items.length || 1);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -1216,7 +1323,7 @@ function ManualOrderModal({
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
     if (!canSubmit) return;
-    onCreate({
+    onSave({
       requestId,
       customer: { name: name.trim(), phone: phone.trim(), document: customerDocument.trim() || undefined },
       delivery: { type: deliveryType, address: deliveryType === "domicilio" ? address.trim() : undefined },
@@ -1231,8 +1338,8 @@ function ManualOrderModal({
       <form className={`${styles.formModal} ${styles.formModalWide}`} aria-labelledby="manual-title" onSubmit={submit}>
         <header className={styles.modalHeader}>
           <div>
-            <p>PEDIDO TELEFÓNICO</p>
-            <h2 id="manual-title">Nuevo pedido manual</h2>
+            <p>{order ? order.orderNumber : "PEDIDO TELEFÓNICO"}</p>
+            <h2 id="manual-title">{order ? "Editar pedido" : "Nuevo pedido manual"}</h2>
           </div>
           <button type="button" onClick={onCancel} aria-label="Cerrar">
             <X size={19} />
@@ -1334,13 +1441,16 @@ function ManualOrderModal({
             <span>Observaciones</span>
             <textarea rows={3} value={notes} maxLength={2000} onChange={(event) => setNotes(event.target.value)} />
           </label>
+          {order?.quote ? (
+            <p className={styles.formHint}>Si cambias los productos, la cotización guardada se limpiará para evitar un total desactualizado.</p>
+          ) : null}
         </div>
         <footer className={styles.modalActions}>
           <button type="button" className={styles.cancelButton} onClick={onCancel} disabled={busy}>
             Cancelar
           </button>
           <button type="submit" className={styles.confirmButton} disabled={busy || !canSubmit}>
-            {busy ? "Creando..." : "Crear pedido"}
+            {busy ? "Guardando..." : order ? "Guardar cambios" : "Crear pedido"}
           </button>
         </footer>
       </form>

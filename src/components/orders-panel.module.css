@@ -734,8 +734,10 @@
 .detailsButton,
 .printButton,
 .dispatchButton,
+.deleteButton,
 .cancelButton,
 .confirmButton,
+.deleteConfirmButton,
 .pagination button {
   display: inline-flex;
   min-height: 40px;
@@ -770,6 +772,18 @@
   color: white;
   background: #0aaa7a;
   box-shadow: 0 6px 14px rgb(10 170 122 / 16%);
+}
+
+.deleteButton,
+.deleteConfirmButton {
+  border: 1px solid #d33b4f;
+  color: white;
+  background: #c92f44;
+}
+
+.deleteButton:hover,
+.deleteConfirmButton:hover {
+  background: #a92336;
 }
 
 .emptyState {
@@ -999,6 +1013,7 @@
 
 .modalActions {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: 9px;
   padding: 13px 20px 17px;
@@ -1192,6 +1207,7 @@
 }
 
 .confirmButton:disabled,
+.deleteConfirmButton:disabled,
 .cancelButton:disabled,
 .detailsButton:disabled {
   opacity: 0.6;

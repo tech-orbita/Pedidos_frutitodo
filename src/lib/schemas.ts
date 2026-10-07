@@ -84,6 +84,24 @@ export const manualOrderSchema = z
   })
   .superRefine(requireAddressForDelivery);
 
+/* Operators may correct every customer-facing order detail while an order is still open.
+   The request id keeps the mutation identifiable in logs and matches the other panel actions. */
+export const orderEditSchema = z
+  .object({
+    requestId: identifier,
+    operator: optionalText(80),
+    customer: z.object({
+      name: z.string().trim().min(1).max(160),
+      phone: z.string().trim().min(3).max(40),
+      document: optionalText(40),
+    }),
+    delivery: deliverySchema,
+    paymentMethod: optionalText(80),
+    items: z.array(orderItemSchema).min(1).max(100),
+    notes: z.string().trim().max(2000).optional().nullable(),
+  })
+  .superRefine(requireAddressForDelivery);
+
 export const helpRequestIngestSchema = z.object({
   locationId: z.string().trim().min(3).max(128),
   contactId: z.string().trim().min(1).max(128),
