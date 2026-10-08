@@ -28,7 +28,7 @@ IA pide ayuda → etiqueta `requiere_ayuda` → workflow GHL → n8n (frutitodo-
    → panel: tarjeta roja con botón "Abrir conversación"
 ```
 
-Los tres workflows de n8n están en la carpeta [`n8n/`](../n8n) y se importan con **Import from File**.
+Los tres workflows de n8n se guardan en la carpeta local `n8n/` (fuera de git porque llevan secretos) y se importan con **Import from File**.
 
 ## 1. Base de datos
 

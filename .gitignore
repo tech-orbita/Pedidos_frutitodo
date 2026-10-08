@@ -32,3 +32,6 @@ Thumbs.db
 
 # Client product catalog (imported with npm run import:products)
 data/
+
+# Workflows de n8n exportados con secretos: se mantienen solo en local
+n8n/
