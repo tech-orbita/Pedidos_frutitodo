@@ -6,14 +6,15 @@
 Cliente (WhatsApp)
    │
    ▼
-IA de GHL: pide los datos, lee el resumen, el cliente confirma
-   │  ejecuta "Pedido Confirmado" (nuevo) o "Anexo a Pedido" (ajuste)
+Agente de GHL reconoce una lista completa, el fin de la selección o un cambio posterior
+   │  ejecuta una sola acción "Enviar Pedido a n8n" con los datos del contacto
    ▼
 Workflow GHL → Custom Webhook → n8n  (frutitodo-pedido-ia.json)
-   1. busca la conversación y lee sus últimos mensajes (API de GHL)
-   2. OpenAI (GPT 5.6 luna) saca el pedido confirmado de esos mensajes → JSON estricto
-   3. POST al panel: /orders (nuevo) o /orders/amendments (ajuste)
-   4. escribe de vuelta en el contacto: resumen, cédula, método de pago, número y estado
+   1. normaliza body/customData, busca la conversación y lee hasta 30 mensajes
+   2. conserva solo los mensajes del día actual en America/Bogota, incluidas imágenes
+   3. OpenAI reconstruye la lista completa del día y separa consultas de precio de compras
+   4. POST único a /orders/upsert; Supabase decide si actualiza el pedido vigente o crea uno
+   5. escribe de vuelta en el contacto: resumen fiel, cédula, método de pago, número y estado
    ▼
 Panel (iframe): Nuevos → En preparación → Despachados · Requiere ayuda · Productos y precios
    │  cotizar (precios del catálogo) → enviar por WhatsApp con la API de GHL
@@ -29,14 +30,14 @@ Los tres workflows de n8n están en la carpeta [`n8n/`](../n8n) y se importan co
 
 ## 1. Base de datos
 
-Aplicar las migraciones `20260922120000_help_requests_and_order_details.sql` y `20260923120000_catalog_prices_and_quotes.sql`:
+Aplicar todas las migraciones pendientes, incluida `20261007231323_flexible_orders_and_courier_access.sql`:
 
 ```powershell
 npx.cmd supabase db push --dry-run
 npx.cmd supabase db push
 ```
 
-Agregan a los pedidos: cédula, método de pago, conversación de GHL, origen (IA o manual), quién imprimió o despachó y la cotización. Crean las tablas `help_requests` y `products` (catálogo con precios y búsqueda aproximada con `pg_trgm`).
+Agregan a los pedidos: cédula, método de pago, conversación de GHL, origen (IA o manual), texto original, quién imprimió o despachó y la cotización. También permiten dirección pendiente y crean una credencial limitada para domiciliarios.
 
 **Sin estas migraciones el panel desplegado falla**: aplícalas antes o justo después del push.
 
@@ -58,17 +59,20 @@ Los campos `pedido_evento_id`, `pedido_productos_json`, `pedido_tipo_entrega`, `
 
 ## 3. Prompt del agente
 
-El prompt completo está en [prompt-agenteia.md](prompt-agenteia.md) (menos de 2000 palabras). Lo que importa para la integración:
+El prompt completo está en [prompt-agenteia.md](prompt-agenteia.md). Lo que importa para la integración:
 
-1. La **cédula es obligatoria**; si no está en el contacto, la IA la pide antes del resumen.
+1. Una lista completa escrita o en imagen se envía desde el primer mensaje, aunque falten cédula, dirección, pago o confirmación. Si el cliente pide producto por producto, se envía cuando indique que terminó.
 2. La IA **no guarda campos** del contacto; n8n los escribe después de extraer el pedido.
-3. El resumen va en **un solo mensaje con todos los datos** (también los que venían del contacto, como cédula o dirección), porque n8n arma el pedido leyendo los últimos mensajes.
+3. n8n reconstruye el pedido con los mensajes del día actual. Cada producto se conserva como lo escribió el cliente aunque no aparezca en las KB o no coincida con el catálogo; marca, presentación, preparación y demás características permanecen en su propia línea.
 4. **Cualquier afirmación** del cliente confirma ("sí", "correcto", "dale", "listo", 👍…). Si agrega o cambia algo, la IA vuelve a mostrar el resumen completo.
-5. Con la confirmación ejecuta **una sola vez** la acción **"Pedido Confirmado"** (workflow 4.1).
-6. Un cambio después de confirmar es un **ajuste al mismo pedido** (conserva el número): la IA muestra el resumen completo ajustado, espera la afirmación y ejecuta **"Anexo a Pedido"** (workflow 4.2). Si el pedido ya estaba impreso, el panel lo devuelve a *Nuevos* con la marca **Ajuste · reimprimir**; si ya se despachó, n8n lo registra como pedido nuevo.
+5. El agente ejecuta una sola acción **Enviar Pedido a n8n**. La acción significa “procesa la conversación ahora”; no significa crear ni ajustar.
+6. El endpoint único consulta Supabase: si el contacto tiene un pedido `pending` o `printed` lo reemplaza con la lista completa reconstruida y conserva el número; si no tiene uno vigente, crea un pedido nuevo. Un pedido impreso vuelve a *Nuevos* con **Ajuste · reimprimir**.
 7. **"Solicitar Ayuda"** (incidencias, estado del pedido, hablar con una persona) debe agregar la etiqueta `requiere_ayuda` (workflow 4.3).
-9. Forma de pago en **todos** los pedidos; si es efectivo, con qué billete paga. n8n lo guarda como "Efectivo, paga con $50.000" y la cotización y la comanda muestran el cambio.
-8. La IA no da precios ni totales: la cotización la envía una persona desde el panel.
+8. Si pregunta precio, la IA pide la lista completa una sola vez; si insiste por segunda vez, ejecuta **"Solicitar Ayuda"**. La reactivación al resolver la tarjeta es automática y no forma parte del prompt.
+9. La dirección no bloquea un pedido: se toma la guardada en el CRM y, si falta, el panel advierte al domiciliario que contacte al cliente antes de despachar.
+10. “5 mil de papa”, “$7.000 de queso” y expresiones equivalentes son cantidades por valor válidas.
+11. El agente no pregunta método de pago ni billete. Si el cliente lo menciona espontáneamente, n8n lo conserva; de lo contrario el equipo puede completarlo después.
+12. La IA no da precios ni totales: la cotización la envía una persona desde el panel.
 
 ## 4. Workflows de GHL
 
@@ -77,30 +81,32 @@ Todos usan un **Custom Webhook** `POST` con estos headers:
 - `Content-Type: application/json`
 - `x-frutitodo-secret: <INBOUND_SECRET>`, el mismo valor que pongas en el nodo Config de n8n.
 
-### 4.1 Pedido Confirmado
+### 4.1 Acción única Enviar Pedido a n8n
 
-- **Disparador:** la acción *Trigger Workflow* del agente. No agregar un segundo disparador automático.
+**Descripción para pegar en la tool:** `Procesa el pedido de la conversación actual. Úsala al recibir una lista completa o imagen, cuando el cliente termine de agregar productos o cuando modifique un pedido ya enviado.`
+
+- **Disparador:** la workflow action **Enviar Pedido a n8n** ejecutada por el agente. Debe poder ejecutarse más de una vez en la misma conversación.
 - **URL:** `https://<tu-n8n>/webhook/frutitodo-pedido`
 - **Body:**
 
 ```json
 {
-  "action": "create",
   "locationId": "{{location.id}}",
   "contactId": "{{contact.id}}",
   "contactName": "{{contact.name}}",
   "contactPhone": "{{contact.phone}}",
-  "resumen": ""
+  "contactDocument": "{{contact.documento_de_identidad}}",
+  "contactAddress": "{{contact.direccion_de_envio}}"
 }
 ```
 
-`resumen` es opcional: si la IA sí guarda un resumen, puedes mandarlo (`{{contact.pedido_resumen}}`) y la LLM lo usa como apoyo, pero **lo que manda es la conversación**. n8n lee los últimos `MESSAGE_LIMIT` mensajes (10 por defecto, configurable en el nodo Config). Si los pedidos son largos y el resumen confirmado queda fuera de esa ventana, súbelo a 20 o 30.
+Los mismos valores pueden llegar dentro de `customData` usando estas claves o sus variantes `snake_case`; el nodo **Normalizar entrada** acepta ambas formas. n8n lee los últimos `MESSAGE_LIMIT` mensajes (30 por defecto), descarta todos los que no sean del día actual en `America/Bogota` y usa como idempotencia el último mensaje entrante del cliente.
 
-### 4.2 Anexo a Pedido
+Si una línea de la lista no trae cantidad, n8n no la elimina: conserva la frase literal y usa internamente cantidad `1` sin unidad como marcador provisional para que el operario pueda corregirla en el panel.
 
-Igual que el anterior, con `"action": "amend"`. `action` puede ir en el body o como header `action: amend` (o `create`); si no llega, n8n asume `create`. n8n llama al endpoint de ajustes. Si el contacto no tiene un pedido abierto (`404`) o el pedido ya salió (`409`), lo registra como pedido nuevo.
+Configura en el prompt tres disparadores para esa misma acción: (1) lista completa o imagen, (2) el cliente termina de escoger productos uno a uno y (3) agrega, quita o corrige algo después. No configures acciones separadas **Pedido Confirmado** y **Anexo a Pedido**. Las consultas de precio, saludos y mensajes sin intención de compra terminan con `200 ignored` y no crean pedidos ni solicitudes de ayuda.
 
-### 4.3 Cliente requiere ayuda
+### 4.2 Cliente requiere ayuda
 
 - **Disparador:** *Contact Tag Added* = `requiere_ayuda` (la agrega la acción "Solicitar Ayuda" del agente)
 - **Acción 1:** Custom Webhook a `https://<tu-n8n>/webhook/frutitodo-ayuda`
@@ -181,7 +187,15 @@ https://pedidos-frutitodo-eight.vercel.app/panel?location=UfbKDvUAPCDEaRQWYXau&t
 npm.cmd run provision:location -- --location-id UfbKDvUAPCDEaRQWYXau --name "COL - Frutitodo"
 ```
 
-Cada ejecución reemplaza el token anterior, así que hay que actualizar el enlace del menú. Supabase guarda solo el HMAC del token con `EMBED_TOKEN_PEPPER`: si se pierde, se regenera. El token es a la vez credencial y aislamiento entre locations. Quien tenga la URL completa puede ver y despachar pedidos, así que hay que tratarla como secreto.
+Después de aplicar la migración de acceso flexible, crea el enlace limitado para domiciliarios sin reemplazar el token operativo:
+
+```powershell
+npm.cmd run provision:location -- --location-id UfbKDvUAPCDEaRQWYXau --name "COL - Frutitodo" --role courier
+```
+
+Usa la URL que imprime ese comando en un Custom Menu Link visible solo para el rol de domiciliarios.
+
+Cada ejecución reemplaza el token anterior del mismo rol, así que hay que actualizar el enlace correspondiente. Supabase guarda solo el HMAC del token con `EMBED_TOKEN_PEPPER`: si se pierde, se regenera. El token es a la vez credencial, rol y aislamiento entre locations; trátalo como secreto.
 
 **No usar `{{custom_values.*}}` en el enlace:** los Custom Menu Links no resuelven custom values y el panel mostraría `Enlace de acceso incompleto`. El panel también acepta el formato con fragmento (`/panel#location=...&token=...`) y los alias `location_id` y `panel_token`.
 
@@ -209,7 +223,9 @@ El panel responde con `Content-Security-Policy: frame-ancestors`, limitado a los
 
 - Despachar exige una impresión confirmada.
 - Un **ajuste** conserva el número de pedido. Si el pedido ya estaba impreso, vuelve a *Nuevos* marcado **Ajuste · reimprimir** y no puede despacharse sin reimprimir.
-- **Pedido manual** (llamadas): botón arriba a la derecha. Entra a *Nuevos* con la marca "Manual" y sigue las mismas reglas. No tiene contacto de WhatsApp: se puede cotizar e imprimir con precios, pero no enviar.
+- **Pedido manual** (llamadas): busca primero al cliente por nombre o teléfono y precarga nombre, teléfono, cédula y dirección desde GHL. El pedido se pega completo en un solo campo de texto; no se crean productos uno por uno. Si se seleccionó un contacto, también puede recibir la cotización por WhatsApp.
+- Si un domicilio no tiene dirección, la tarjeta, el detalle y la comanda lo marcan claramente; el cuadro de despacho exige contactar al cliente antes de confirmar.
+- La cuenta de domiciliario solo puede ver pedidos *En preparación*, abrir el detalle y despacharlos; las APIs bloquean creación, edición, eliminación, impresión, catálogo, cotizaciones y solicitudes de ayuda.
 - **Sonido:** botón de la campana. Hace falta un clic porque el navegador bloquea el audio hasta entonces. Suena distinto para un pedido nuevo y para una solicitud de ayuda. El título de la pestaña muestra `(N) Ayuda`.
 
 ### Catálogo de productos
@@ -228,7 +244,7 @@ En la pestaña **Productos y precios** se busca por nombre o referencia (tolera 
 
 Desde la tarjeta (**Cotizar**) o el detalle del pedido:
 
-1. El panel propone para cada línea el producto del catálogo que más se parece, con su precio. Si el cliente pidió en kg y el producto se vende por libra, convierte la cantidad (**1 lb = 500 g**) y lo indica.
+1. El panel propone para cada línea el producto del catálogo que más se parece, con su precio. Si el cliente pidió en kg y el producto se vende por libra, convierte la cantidad (**1 lb = 500 g**) y lo indica. Una línea pedida por valor queda fija como ese valor y no se multiplica por el precio unitario del catálogo.
 2. El operario confirma o cambia el producto (buscador), la cantidad, la unidad y el precio; puede agregar o quitar líneas y poner el valor del domicilio.
 3. El total se calcula en vivo y **se recalcula en el servidor** (el navegador nunca decide el total).
 4. **Guardar** deja la cotización como borrador; **Enviar al cliente** la manda por WhatsApp con la API de GHL, detallada línea por línea con subtotal, domicilio, total, método de pago y una nota opcional. El mensaje se puede ver antes de enviar.
@@ -241,9 +257,10 @@ Requiere en Vercel:
 
 | Variable | Contenido |
 |---|---|
-| `GHL_API_TOKEN` | Private Integration token de la subcuenta (`conversations/message.write`, `contacts.write`) |
+| `GHL_API_TOKEN` | Private Integration token de la subcuenta (`conversations/message.write`, `contacts.write`, `contacts.readonly`) |
 | `GHL_MESSAGE_TYPE` | Opcional, `WhatsApp` por defecto |
-| `GHL_CF_ULTIMO_PEDIDO_TOTAL` | Opcional, clave del campo `ultimo_pedido_total` |
+| `GHL_CF_DIRECCION` | Opcional, clave o ID de `direccion_de_envio` para precargar clientes |
+| `GHL_CF_CEDULA` | Opcional, clave o ID de `documento_de_identidad` para precargar clientes |
 
 ## 10. Endpoints de la app
 
@@ -251,6 +268,7 @@ Todos los webhooks usan `Authorization: Bearer <GHL_INGEST_SECRET>`.
 
 | Endpoint | Uso |
 |---|---|
+| `POST /api/webhooks/ghl/orders/upsert` | Consulta Supabase y decide si actualiza el pedido vigente (`pending`/`printed`) o crea uno nuevo |
 | `POST /api/webhooks/ghl/orders` | Pedido nuevo (n8n) |
 | `POST /api/webhooks/ghl/orders/amendments` | Ajuste al pedido abierto del contacto |
 | `POST /api/webhooks/ghl/help-requests` | La IA pidió ayuda |
@@ -264,9 +282,10 @@ Cuerpo de pedido y ajuste:
   "contactId": "<contacto>",
   "conversationId": "<opcional>",
   "customer": { "name": "…", "phone": "…", "document": "<opcional>" },
-  "delivery": { "type": "domicilio", "address": "…" },
+  "delivery": { "type": "domicilio", "address": "<opcional>" },
   "paymentMethod": "<opcional>",
   "items": [{ "name": "Pechuga de pollo troceada", "quantity": 2, "unit": "kg" }],
+  "rawOrderText": "2 kg de pechuga troceada\n5 mil de papa",
   "notes": "<opcional>"
 }
 ```
@@ -282,12 +301,12 @@ Respuestas del endpoint de ajustes:
 
 ## 11. Pruebas manuales sugeridas
 
-1. **Pedido nuevo:** conversación de prueba → confirmar → aparece en *Nuevos* con cédula, pago y "Abrir conversación". En GHL quedan `pedido_resumen` (escrito por n8n), `ultimo_pedido_numero` y `ultimo_pedido_estado = nuevo`.
+1. **Pedido nuevo:** enviar una lista completa → el agente ejecuta la tool sin preguntar cédula, dirección ni pago → aparece en *Nuevos* con "Abrir conversación". En GHL quedan `pedido_resumen`, `ultimo_pedido_numero` y `ultimo_pedido_estado = nuevo`.
 2. **Ajuste antes de imprimir:** pedir un cambio → mismo número, marca "Ajustado por el cliente".
 3. **Ajuste después de imprimir:** imprimir → el pedido pasa a *En preparación* y en GHL queda `en_preparacion`. Pedir un cambio → vuelve a *Nuevos* con **Ajuste · reimprimir**, mismo número, y el tiquete trae la leyenda de ajuste.
 4. **Ajuste después de despachar:** se crea un pedido nuevo con otro número.
 5. **Ayuda:** agregar la etiqueta `requiere_ayuda` a un contacto → tarjeta roja, sonido, título `(1) Ayuda`. "Abrir conversación" lleva al chat. Marcar resuelta.
-6. **Resumen ilegible:** enviar un resumen sin productos → no se crea pedido y aparece una solicitud de ayuda con el motivo.
+6. **Mensaje sin pedido:** enviar una consulta sin productos → no se crea pedido y n8n responde `200 ignored`.
 7. **Cotización:** "Cotizar" → revisar las sugerencias del catálogo → poner precios → "Enviar al cliente" → llega el WhatsApp detallado; la tarjeta muestra "Cotización enviada" y la comanda sale con precios. Volver a abrir el catálogo: los precios usados quedaron guardados.
 7b. **Catálogo:** importar el CSV, buscar "pechuga", filtrar "Sin precio", poner un precio y guardarlo.
 8. **Despachar:** llega el mensaje de "va en camino" y queda `despachado` en GHL.

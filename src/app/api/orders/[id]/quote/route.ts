@@ -18,7 +18,7 @@ const TOTAL_FIELD_KEY = () => process.env.GHL_CF_ULTIMO_PEDIDO_TOTAL?.trim() || 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
     const access = await getPanelAccess(request);
-    if (!access) return unauthorized();
+    if (!access || access.role !== "operator") return unauthorized();
     const { id } = await context.params;
 
     const parsed = quoteRequestSchema.safeParse(await request.json().catch(() => null));

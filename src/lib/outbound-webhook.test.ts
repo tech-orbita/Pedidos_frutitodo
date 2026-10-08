@@ -21,6 +21,7 @@ const event: OrderDispatchedEvent = {
     deliveryType: "domicilio",
     deliveryAddress: "Carrera 10 # 20-30",
     items: [{ name: "Aguacate Hass", quantity: 1.5, unit: "kg" }],
+    rawOrderText: null,
     notes: null,
     status: "dispatched",
     receivedAt: "2026-09-09T17:55:00.000Z",

@@ -21,6 +21,7 @@ type DraftLine = {
   /** What the customer asked for, when the line comes from the order. */
   requested: string | null;
   hint: string | null;
+  fixedAmount: boolean;
 };
 
 type Match = (Product & { score: number }) | null;
@@ -80,17 +81,19 @@ export function QuoteEditor({
           unitPrice: String(line.unitPrice),
           requested: null,
           hint: null,
+          fixedAmount: line.unit === "COP" && line.quantity === 1,
         }))
       : order.items.map((item) => ({
           key: newKey(),
           productId: null,
           reference: null,
           name: item.name,
-          quantity: quantityText(item.quantity),
-          unit: item.unit || "",
-          unitPrice: "",
-          requested: `${quantityText(item.quantity)}${item.unit ? ` ${item.unit}` : ""} ${item.name}`,
-          hint: null,
+          quantity: item.quantityKind === "amount" || item.unit === "COP" ? "1" : quantityText(item.quantity),
+          unit: item.quantityKind === "amount" || item.unit === "COP" ? "COP" : item.unit || "",
+          unitPrice: item.quantityKind === "amount" || item.unit === "COP" ? String(item.quantity) : "",
+          requested: item.rawText || `${quantityText(item.quantity)}${item.unit ? ` ${item.unit}` : ""} ${item.name}`,
+          hint: item.quantityKind === "amount" || item.unit === "COP" ? "Valor solicitado por el cliente" : null,
+          fixedAmount: item.quantityKind === "amount" || item.unit === "COP",
         })),
   );
   const [deliveryFee, setDeliveryFee] = useState(order.quote ? String(order.quote.deliveryFee) : "");
@@ -117,7 +120,7 @@ export function QuoteEditor({
         setLines((current) =>
           current.map((line, index) => {
             const match = matches[index];
-            return match && match.score >= MIN_MATCH_SCORE ? lineFromProduct(line, match) : line;
+            return !line.fixedAmount && match && match.score >= MIN_MATCH_SCORE ? lineFromProduct(line, match) : line;
           }),
         );
       })
@@ -237,12 +240,14 @@ export function QuoteEditor({
                     aria-label={`Cantidad ${index + 1}`}
                     inputMode="decimal"
                     value={line.quantity}
+                    disabled={line.fixedAmount}
                     onChange={(event) => updateLine(line.key, { quantity: event.target.value })}
                   />
                   <input
                     aria-label={`Unidad ${index + 1}`}
                     list="quote-units"
                     value={line.unit}
+                    disabled={line.fixedAmount}
                     maxLength={40}
                     onChange={(event) => updateLine(line.key, { unit: event.target.value })}
                   />
@@ -276,7 +281,7 @@ export function QuoteEditor({
             onClick={() =>
               setLines((current) => [
                 ...current,
-                { key: newKey(), productId: null, reference: null, name: "", quantity: "1", unit: "", unitPrice: "", requested: null, hint: null },
+                { key: newKey(), productId: null, reference: null, name: "", quantity: "1", unit: "", unitPrice: "", requested: null, hint: null, fixedAmount: false },
               ])
             }
           >

@@ -52,6 +52,15 @@ export async function POST(request: Request) {
     const result = data?.[0];
     if (!result) throw new Error("ingest_order returned no result");
 
+    if (input.rawOrderText) {
+      const { error: rawTextError } = await supabase
+        .from("orders")
+        .update({ raw_order_text: input.rawOrderText })
+        .eq("id", result.order_id)
+        .eq("location_id", location.id);
+      if (rawTextError) throw rawTextError;
+    }
+
     if (result.payload_conflict) {
       return noStoreJson(
         {

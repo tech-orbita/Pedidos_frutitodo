@@ -72,6 +72,16 @@ describe("formatQuoteMessage", () => {
     expect(message).toContain("Método de pago: Transferencia");
     expect(message).toContain("Cambiamos el aguacate");
   });
+
+  it("shows an amount requested by the customer as a fixed value", () => {
+    const amountQuote = computeQuote([{ name: "Papa", quantity: 1, unit: "COP", unitPrice: 5_000 }], 0);
+    const amountMessage = formatQuoteMessage(
+      { orderNumber: "FT-000022", customerName: "Luis", paymentMethod: null, deliveryType: "domicilio" },
+      amountQuote,
+    );
+    expect(amountMessage).toContain(`• Papa: ${formatPesos(5_000)}`);
+    expect(amountMessage).not.toContain("/COP");
+  });
 });
 
 describe("cashChange", () => {

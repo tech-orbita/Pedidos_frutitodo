@@ -11,6 +11,8 @@ export const orderItemSchema = z.object({
   name: z.string().trim().min(1).max(160),
   quantity: z.coerce.number().positive().max(100000),
   unit: z.string().trim().min(1).max(40).optional(),
+  quantityKind: z.literal("amount").optional(),
+  rawText: z.string().trim().min(1).max(500).optional(),
 });
 
 const itemsSchema = z.preprocess((value) => {
@@ -35,19 +37,6 @@ const deliverySchema = z.object({
   address: z.string().trim().max(500).optional().nullable(),
 });
 
-function requireAddressForDelivery(
-  value: { delivery: { type: "domicilio" | "recogida"; address?: string | null } },
-  context: z.RefinementCtx,
-) {
-  if (value.delivery.type === "domicilio" && !value.delivery.address) {
-    context.addIssue({
-      code: "custom",
-      path: ["delivery", "address"],
-      message: "La dirección es obligatoria para domicilio",
-    });
-  }
-}
-
 export const ingestOrderSchema = z
   .object({
     sourceEventId: identifier,
@@ -59,12 +48,12 @@ export const ingestOrderSchema = z
       phone: z.string().trim().min(3).max(40),
       document: optionalText(40),
     }),
-    delivery: deliverySchema,
+    delivery: deliverySchema.default({ type: "domicilio" }),
     paymentMethod: optionalText(80),
     items: itemsSchema,
+    rawOrderText: optionalText(20_000),
     notes: z.string().trim().max(2000).optional().nullable(),
-  })
-  .superRefine(requireAddressForDelivery);
+  });
 
 /* Orders taken over the phone and typed in the panel. There is no GHL contact behind them,
    and the panel supplies the idempotency key so a double click creates a single order. */
@@ -72,6 +61,7 @@ export const manualOrderSchema = z
   .object({
     requestId: identifier,
     operator: optionalText(80),
+    contactId: optionalText(128),
     customer: z.object({
       name: z.string().trim().min(1).max(160),
       phone: z.string().trim().min(3).max(40),
@@ -80,9 +70,9 @@ export const manualOrderSchema = z
     delivery: deliverySchema,
     paymentMethod: optionalText(80),
     items: z.array(orderItemSchema).min(1).max(100),
+    rawOrderText: z.string().trim().min(1).max(20_000),
     notes: z.string().trim().max(2000).optional().nullable(),
-  })
-  .superRefine(requireAddressForDelivery);
+  });
 
 /* Operators may correct every customer-facing order detail while an order is still open.
    The request id keeps the mutation identifiable in logs and matches the other panel actions. */
@@ -98,9 +88,9 @@ export const orderEditSchema = z
     delivery: deliverySchema,
     paymentMethod: optionalText(80),
     items: z.array(orderItemSchema).min(1).max(100),
+    rawOrderText: z.string().trim().min(1).max(20_000),
     notes: z.string().trim().max(2000).optional().nullable(),
-  })
-  .superRefine(requireAddressForDelivery);
+  });
 
 export const helpRequestIngestSchema = z.object({
   locationId: z.string().trim().min(3).max(128),

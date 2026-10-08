@@ -76,6 +76,15 @@ export async function POST(request: Request) {
       );
     }
 
+    if (input.rawOrderText) {
+      const { error: rawTextError } = await supabase
+        .from("orders")
+        .update({ raw_order_text: input.rawOrderText })
+        .eq("id", result.order_id)
+        .eq("location_id", location.id);
+      if (rawTextError) throw rawTextError;
+    }
+
     /* An amendment is an adjustment to the same order, never a new one: the number stays,
        so the customer and the pickers keep referring to a single order. */
     const number = formatOrderNumber(result.display_sequence as number);

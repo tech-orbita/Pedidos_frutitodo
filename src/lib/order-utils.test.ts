@@ -60,6 +60,7 @@ function orderWith(overrides: Partial<Order>): Order {
     deliveryType: "recogida",
     deliveryAddress: null,
     items: [{ name: "Pan", quantity: 2 }],
+    rawOrderText: null,
     notes: null,
     status: "pending",
     receivedAt: "2026-09-09T17:00:00.000Z",

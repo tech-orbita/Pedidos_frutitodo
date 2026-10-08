@@ -10,7 +10,7 @@ export const runtime = "nodejs";
 export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
     const access = await getPanelAccess(request);
-    if (!access) return unauthorized();
+    if (!access || access.role !== "operator") return unauthorized();
     const { id } = await context.params;
 
     const parsed = productUpdateSchema.safeParse(await request.json().catch(() => null));

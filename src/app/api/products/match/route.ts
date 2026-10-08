@@ -13,7 +13,7 @@ export const runtime = "nodejs";
 export async function POST(request: Request) {
   try {
     const access = await getPanelAccess(request);
-    if (!access) return unauthorized();
+    if (!access || access.role !== "operator") return unauthorized();
 
     const parsed = productMatchSchema.safeParse(await request.json().catch(() => null));
     if (!parsed.success) return invalidPayload(parsed.error);

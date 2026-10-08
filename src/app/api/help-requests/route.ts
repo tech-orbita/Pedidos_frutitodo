@@ -12,7 +12,7 @@ const PAGE_SIZE = 50;
 export async function GET(request: Request) {
   try {
     const access = await getPanelAccess(request);
-    if (!access) return unauthorized();
+    if (!access || access.role !== "operator") return unauthorized();
 
     const url = new URL(request.url);
     const parsed = helpRequestsQuerySchema.safeParse(Object.fromEntries(url.searchParams.entries()));

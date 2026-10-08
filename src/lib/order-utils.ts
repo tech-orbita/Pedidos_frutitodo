@@ -4,6 +4,7 @@ import type { HelpRequest, Order, OrderItem, Quote } from "@/types/orders";
 import { sha256 } from "@/lib/security";
 
 type OrderRow = Database["public"]["Tables"]["orders"]["Row"];
+type CompatibleOrderRow = Omit<OrderRow, "raw_order_text"> & { raw_order_text?: string | null };
 type HelpRequestRow = Database["public"]["Tables"]["help_requests"]["Row"];
 
 export const DEFAULT_GHL_APP_URL = "https://app.iaorbita.com";
@@ -32,7 +33,10 @@ export function canonicalOrderPayload(input: IngestOrderInput): string {
       name: item.name,
       quantity: item.quantity,
       unit: item.unit || null,
+      quantityKind: item.quantityKind || null,
+      rawText: item.rawText || null,
     })),
+    rawOrderText: input.rawOrderText || null,
     notes: input.notes || null,
   });
 }
@@ -46,7 +50,7 @@ export function needsReprint(order: Order): boolean {
   return new Date(order.lastAmendedAt).getTime() > new Date(order.firstPrintedAt).getTime();
 }
 
-export function rowToOrder(row: OrderRow): Order {
+export function rowToOrder(row: CompatibleOrderRow): Order {
   return {
     id: row.id,
     orderNumber: formatOrderNumber(row.display_sequence),
@@ -61,6 +65,7 @@ export function rowToOrder(row: OrderRow): Order {
     deliveryType: row.delivery_type,
     deliveryAddress: row.delivery_address,
     items: row.items as OrderItem[],
+    rawOrderText: row.raw_order_text ?? null,
     notes: row.notes,
     status: row.status,
     receivedAt: row.received_at,

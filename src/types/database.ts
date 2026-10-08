@@ -103,6 +103,7 @@ export type Database = {
         Row: {
           created_at: string
           embed_token_hash: string
+          courier_token_hash: string | null
           ghl_location_id: string
           id: string
           is_active: boolean
@@ -112,6 +113,7 @@ export type Database = {
         Insert: {
           created_at?: string
           embed_token_hash: string
+          courier_token_hash?: string | null
           ghl_location_id: string
           id?: string
           is_active?: boolean
@@ -121,6 +123,7 @@ export type Database = {
         Update: {
           created_at?: string
           embed_token_hash?: string
+          courier_token_hash?: string | null
           ghl_location_id?: string
           id?: string
           is_active?: boolean
@@ -200,6 +203,7 @@ export type Database = {
           ghl_contact_id: string | null
           id: string
           items: Json
+          raw_order_text: string | null
           last_amended_at: string | null
           last_printed_at: string | null
           location_id: string
@@ -237,6 +241,7 @@ export type Database = {
           ghl_contact_id?: string | null
           id?: string
           items: Json
+          raw_order_text?: string | null
           last_amended_at?: string | null
           last_printed_at?: string | null
           location_id: string
@@ -274,6 +279,7 @@ export type Database = {
           ghl_contact_id?: string | null
           id?: string
           items?: Json
+          raw_order_text?: string | null
           last_amended_at?: string | null
           last_printed_at?: string | null
           location_id?: string

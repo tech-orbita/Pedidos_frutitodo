@@ -117,6 +117,7 @@ export function formatQuoteMessage(order: Pick<Order, "orderNumber" | "customerN
     `Hola ${firstName} 👋 Esta es la cotización de tu pedido ${order.orderNumber} en Frutitodo:`,
     "",
     ...quote.lines.map((line) => {
+      if (line.unit === "COP") return `• ${line.name}: ${formatPesos(line.lineTotal)}`;
       const quantity = formatQuantity(line.quantity, line.unit);
       const each = line.quantity === 1 ? "" : ` (${formatPesos(line.unitPrice)}${line.unit ? `/${line.unit}` : " c/u"})`;
       return `• ${quantity} ${line.name}${each}: ${formatPesos(line.lineTotal)}`;

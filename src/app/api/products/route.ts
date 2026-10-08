@@ -11,7 +11,7 @@ export const runtime = "nodejs";
 export async function GET(request: Request) {
   try {
     const access = await getPanelAccess(request);
-    if (!access) return unauthorized();
+    if (!access || access.role !== "operator") return unauthorized();
 
     const url = new URL(request.url);
     const parsed = productsQuerySchema.safeParse(Object.fromEntries(url.searchParams.entries()));
@@ -47,7 +47,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const access = await getPanelAccess(request);
-    if (!access) return unauthorized();
+    if (!access || access.role !== "operator") return unauthorized();
 
     const parsed = productCreateSchema.safeParse(await request.json().catch(() => null));
     if (!parsed.success) return invalidPayload(parsed.error);

@@ -18,6 +18,7 @@ const order = {
     { name: "Aguacate Hass", quantity: 1.5, unit: "kg" },
     { name: "Huevos AA x30", quantity: 1, unit: "cubeta" },
   ],
+  rawOrderText: null,
   notes: "Si no hay aguacate maduro, llamar antes de reemplazar.",
   status: "pending",
   receivedAt: "2026-09-09T17:55:00.000Z",
@@ -253,17 +254,18 @@ test("creates a manual phone order", async ({ page }) => {
   await page.getByRole("button", { name: "Pedido manual" }).click();
   await page.getByLabel("Nombre del cliente *").fill("Don Luis");
   await page.getByLabel("Teléfono *").fill("3001234567");
-  await page.locator("form").getByLabel("Entrega").selectOption("recogida");
-  await page.getByLabel("Producto 1", { exact: true }).fill("Tomate chonto");
-  await page.getByLabel("Cantidad 1").fill("2");
-  await page.getByLabel("Unidad 1").fill("lb");
+  await page.getByLabel("Pedido completo").fill("2 libras de tomate chonto\n7 mil de queso costeño");
   await page.getByRole("button", { name: "Crear pedido" }).click();
 
   await expect(page.getByText("Pedido FT-000022 creado")).toBeVisible();
   expect(posted).toMatchObject({
     customer: { name: "Don Luis", phone: "3001234567" },
-    delivery: { type: "recogida" },
-    items: [{ name: "Tomate chonto", quantity: 2, unit: "lb" }],
+    delivery: { type: "domicilio", address: "" },
+    rawOrderText: "2 libras de tomate chonto\n7 mil de queso costeño",
+    items: [
+      { name: "tomate chonto", quantity: 2, unit: "lb", rawText: "2 libras de tomate chonto" },
+      { name: "queso costeño", quantity: 7000, unit: "COP", quantityKind: "amount", rawText: "7 mil de queso costeño" },
+    ],
   });
 });
 

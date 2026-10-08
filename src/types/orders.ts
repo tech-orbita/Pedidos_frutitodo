@@ -6,6 +6,8 @@ export type OrderItem = {
   name: string;
   quantity: number;
   unit?: string;
+  quantityKind?: "amount";
+  rawText?: string;
 };
 
 export type Order = {
@@ -22,6 +24,7 @@ export type Order = {
   deliveryType: DeliveryType;
   deliveryAddress: string | null;
   items: OrderItem[];
+  rawOrderText: string | null;
   notes: string | null;
   status: OrderStatus;
   receivedAt: string;
@@ -51,12 +54,21 @@ export type OrderStats = {
 export type OrdersResponse = {
   orders: Order[];
   stats: OrderStats;
+  accessRole: "operator" | "courier";
   pagination: {
     page: number;
     pageSize: number;
     total: number;
     totalPages: number;
   };
+};
+
+export type CrmContact = {
+  id: string;
+  name: string;
+  phone: string;
+  document: string | null;
+  address: string | null;
 };
 
 export type HelpRequestStatus = "open" | "resolved";

@@ -1115,6 +1115,43 @@
   font-size: 13px;
 }
 
+.itemsEditor textarea {
+  width: 100%;
+  min-height: 190px;
+  resize: vertical;
+  font: inherit;
+  line-height: 1.55;
+}
+
+.contactResults {
+  display: grid;
+  gap: 6px;
+  margin-top: 6px;
+  max-height: 220px;
+  overflow: auto;
+}
+
+.contactResults button {
+  display: grid;
+  gap: 3px;
+  padding: 10px 12px;
+  text-align: left;
+  border: 1px solid var(--line, #dfe4e8);
+  border-radius: 10px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.contactResults button:hover { border-color: #23824f; background: #f3fbf6; }
+.contactResults span { color: #647067; font-size: .84rem; }
+
+.rawOrderText {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.55;
+}
+
 .itemRow {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 80px 100px 38px;

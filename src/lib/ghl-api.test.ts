@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { GhlApiError, sendContactMessage, updateContactCustomFields } from "@/lib/ghl-api";
+import { GhlApiError, removeContactTags, searchCrmContacts, sendContactMessage, updateContactCustomFields } from "@/lib/ghl-api";
 
 const fetchMock = vi.fn();
 
@@ -49,5 +49,26 @@ describe("updateContactCustomFields", () => {
   it("never throws when GHL fails", async () => {
     fetchMock.mockResolvedValue(Response.json({ message: "bad" }, { status: 400 }));
     await expect(updateContactCustomFields("contact-1", [{ key: "ultimo_pedido_total", value: "1000" }])).resolves.toBeUndefined();
+  });
+});
+
+describe("CRM helpers", () => {
+  it("searches contacts without exposing the token and maps saved data", async () => {
+    fetchMock
+      .mockResolvedValueOnce(Response.json({ contacts: [{ id: "c1", name: "Ana", phone: "3001", customFields: [{ id: "address-id", value: "Calle 1" }] }] }))
+      .mockResolvedValueOnce(Response.json({ customFields: [{ id: "address-id", fieldKey: "contact.direccion_de_envio" }] }));
+    await expect(searchCrmContacts("loc-1", "Ana")).resolves.toEqual([
+      { id: "c1", name: "Ana", phone: "3001", document: null, address: "Calle 1" },
+    ]);
+    expect(fetchMock.mock.calls[0][0]).toContain("/contacts/?locationId=loc-1&limit=20&query=Ana");
+  });
+
+  it("removes the help tag when the operator resolves a request", async () => {
+    fetchMock.mockResolvedValue(Response.json({ tags: [] }));
+    await removeContactTags("contact-1", ["requiere_ayuda"]);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toContain("/contacts/contact-1/tags");
+    expect(init.method).toBe("DELETE");
+    expect(JSON.parse(init.body)).toEqual({ tags: ["requiere_ayuda"] });
   });
 });

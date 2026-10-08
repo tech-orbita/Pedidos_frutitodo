@@ -8,7 +8,7 @@ export const runtime = "nodejs";
 export async function GET(request: Request) {
   try {
     const access = await getPanelAccess(request);
-    if (!access) return unauthorized();
+    if (!access || access.role !== "operator") return unauthorized();
 
     const { data, error } = await getSupabaseAdmin().rpc("product_categories", { p_location_id: access.locationId });
     if (error) throw error;

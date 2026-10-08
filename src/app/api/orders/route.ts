@@ -23,7 +23,7 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const parsed = ordersQuerySchema.safeParse(Object.fromEntries(url.searchParams.entries()));
     if (!parsed.success) return invalidPayload(parsed.error);
-    const filters = parsed.data;
+    const filters = access.role === "courier" ? { ...parsed.data, scope: "printed" as const, status: undefined } : parsed.data;
     const supabase = getSupabaseAdmin();
 
     let query = supabase
@@ -84,6 +84,7 @@ export async function GET(request: Request) {
         dispatchedToday: dispatchedTodayResult.count || 0,
         openHelpRequests: helpResult.count || 0,
       },
+      accessRole: access.role,
       pagination: {
         page: filters.page,
         pageSize: PAGE_SIZE,
@@ -104,7 +105,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const access = await getPanelAccess(request);
-    if (!access) return unauthorized();
+    if (!access || access.role !== "operator") return unauthorized();
 
     const parsed = manualOrderSchema.safeParse(await request.json().catch(() => null));
     if (!parsed.success) return invalidPayload(parsed.error);
@@ -114,18 +115,19 @@ export async function POST(request: Request) {
     const hashInput: IngestOrderInput = {
       sourceEventId,
       locationId: access.ghlLocationId,
-      contactId: "",
+      contactId: input.contactId || "",
       customer: input.customer,
       delivery: input.delivery,
       paymentMethod: input.paymentMethod,
       items: input.items,
+      rawOrderText: input.rawOrderText,
       notes: input.notes,
     };
 
     const { data, error } = await getSupabaseAdmin().rpc("ingest_order", {
       p_location_id: access.locationId,
       p_source_event_id: sourceEventId,
-      p_ghl_contact_id: "",
+      p_ghl_contact_id: input.contactId || "",
       p_customer_name: input.customer.name,
       p_customer_phone: input.customer.phone,
       p_delivery_type: input.delivery.type,
@@ -141,6 +143,13 @@ export async function POST(request: Request) {
     if (error) throw error;
     const result = data?.[0];
     if (!result) throw new Error("ingest_order returned no result");
+
+    const { error: rawTextError } = await getSupabaseAdmin()
+      .from("orders")
+      .update({ raw_order_text: input.rawOrderText })
+      .eq("id", result.order_id)
+      .eq("location_id", access.locationId);
+    if (rawTextError) throw rawTextError;
 
     return noStoreJson(
       {

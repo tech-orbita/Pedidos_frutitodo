@@ -29,15 +29,17 @@ import {
   UserRound,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { playAlert, unlockAlerts } from "@/lib/alert-sound";
 import { cashChange, formatPesos } from "@/lib/quote";
 import { DEFAULT_GHL_APP_URL, ghlConversationUrl, needsReprint } from "@/lib/order-utils";
+import { orderItemsToText, parseOrderText } from "@/lib/order-text";
 import { resolvePanelAccess } from "@/lib/panel-credentials";
 import type { CredentialIssue, PanelCredentials } from "@/lib/panel-credentials";
 import { normalizeOperator, resolveOperator, saveOperator } from "@/lib/panel-operator";
 import type {
   DeliveryType,
+  CrmContact,
   HelpRequest,
   HelpRequestsResponse,
   HelpRequestStatus,
@@ -46,7 +48,6 @@ import type {
   OrdersResponse,
   OrderStats,
   OrderStatus,
-  Product,
 } from "@/types/orders";
 import { CatalogView } from "./catalog-view";
 import { authHeaders, responseMessage } from "./panel-api";
@@ -228,6 +229,7 @@ export function OrdersPanel() {
         if (helpResponse && !helpResponse.ok) throw new Error(await responseMessage(helpResponse));
         const orders = (await ordersResponse.json()) as OrdersResponse;
         setData(orders);
+        if (orders.accessRole === "courier" && tab !== "printed") setTab("printed");
         onStats(orders.stats);
         if (helpResponse) setHelpRequests(((await helpResponse.json()) as HelpRequestsResponse).helpRequests);
         setError(null);
@@ -425,6 +427,7 @@ export function OrdersPanel() {
   const orders = data?.orders || [];
   const stats = data?.stats;
   const helpCount = stats?.openHelpRequests ?? 0;
+  const isCourier = data?.accessRole === "courier";
 
   if (!accessReady) return <LoadingScreen />;
   if (!credentials) return <AccessScreen issues={accessIssues} />;
@@ -458,9 +461,11 @@ export function OrdersPanel() {
               >
                 {soundEnabled ? <Bell size={19} /> : <BellOff size={19} />}
               </button>
-              <button className={styles.newOrderButton} type="button" onClick={() => setManualOrderOpen(true)}>
-                <Plus size={17} /> Pedido manual
-              </button>
+              {!isCourier ? (
+                <button className={styles.newOrderButton} type="button" onClick={() => setManualOrderOpen(true)}>
+                  <Plus size={17} /> Pedido manual
+                </button>
+              ) : null}
               <button
                 className={styles.iconButton}
                 type="button"
@@ -493,7 +498,7 @@ export function OrdersPanel() {
             </div>
           ) : null}
 
-          {helpCount > 0 && tab !== "help" ? (
+          {!isCourier && helpCount > 0 && tab !== "help" ? (
             <button type="button" className={styles.helpBanner} onClick={() => changeTab("help")}>
               <LifeBuoy size={18} />
               <span>
@@ -514,21 +519,21 @@ export function OrdersPanel() {
 
           <section className={styles.controlPanel} aria-label="Filtros">
             <div className={styles.tabs} role="tablist" aria-label="Estado de los pedidos">
-              <TabButton active={tab === "pending"} onClick={() => changeTab("pending")} count={stats?.pending}>
-                Nuevos
-              </TabButton>
+              {!isCourier ? (
+                <TabButton active={tab === "pending"} onClick={() => changeTab("pending")} count={stats?.pending}>
+                  Nuevos
+                </TabButton>
+              ) : null}
               <TabButton active={tab === "printed"} onClick={() => changeTab("printed")} count={stats?.printed}>
                 En preparación
               </TabButton>
-              <TabButton active={tab === "dispatched"} onClick={() => changeTab("dispatched")}>
-                Despachados
-              </TabButton>
-              <TabButton active={tab === "help"} onClick={() => changeTab("help")} count={helpCount} alert={helpCount > 0}>
-                Requiere ayuda
-              </TabButton>
-              <TabButton active={tab === "catalog"} onClick={() => changeTab("catalog")}>
-                Productos y precios
-              </TabButton>
+              {!isCourier ? (
+                <>
+                  <TabButton active={tab === "dispatched"} onClick={() => changeTab("dispatched")}>Despachados</TabButton>
+                  <TabButton active={tab === "help"} onClick={() => changeTab("help")} count={helpCount} alert={helpCount > 0}>Requiere ayuda</TabButton>
+                  <TabButton active={tab === "catalog"} onClick={() => changeTab("catalog")}>Productos y precios</TabButton>
+                </>
+              ) : null}
             </div>
 
             {tab === "help" ? (
@@ -654,6 +659,7 @@ export function OrdersPanel() {
                   onPrint={beginPrint}
                   onDispatch={setDispatchOrder}
                   onQuote={setQuoteOrder}
+                  courier={isCourier}
                 />
               ))}
             </section>
@@ -705,6 +711,7 @@ export function OrdersPanel() {
             setSelectedOrder(null);
             window.setTimeout(() => setDeleteOrder(order), 0);
           }}
+          courier={isCourier}
         />
       ) : null}
 
@@ -726,7 +733,9 @@ export function OrdersPanel() {
       {dispatchOrder ? (
         <ConfirmModal
           title="Confirmar despacho"
-          description={`${dispatchOrder.orderNumber} pasará al historial y el cliente recibirá el aviso de que su pedido va en camino.`}
+          description={dispatchOrder.deliveryType === "domicilio" && !dispatchOrder.deliveryAddress
+            ? `${dispatchOrder.orderNumber} no tiene dirección guardada. Contacta al cliente y confirma la dirección antes de marcarlo despachado.`
+            : `${dispatchOrder.orderNumber} pasará al historial y el cliente recibirá el aviso de que su pedido va en camino.`}
           confirmLabel="Marcar despachado"
           icon={<Truck size={22} />}
           busy={actionBusy}
@@ -884,6 +893,7 @@ function OrderCard({
   onPrint,
   onDispatch,
   onQuote,
+  courier,
 }: {
   order: Order;
   conversationUrl: string | null;
@@ -891,6 +901,7 @@ function OrderCard({
   onPrint: (order: Order) => void;
   onDispatch: (order: Order) => void;
   onQuote: (order: Order) => void;
+  courier: boolean;
 }) {
   return (
     <article className={styles.orderCard}>
@@ -931,7 +942,7 @@ function OrderCard({
             </>
           ) : null}
           <dt><MapPin size={14} /> Entrega</dt>
-          <dd>{order.deliveryAddress || "Recoge en tienda"}</dd>
+          <dd>{order.deliveryType === "recogida" ? "Recoge en tienda" : order.deliveryAddress || "Sin dirección · contactar antes de despachar"}</dd>
           {order.paymentMethod ? (
             <>
               <dt><CreditCard size={14} /> Pago</dt>
@@ -942,22 +953,24 @@ function OrderCard({
 
         <div className={styles.orderSummary}>
           <p>Resumen del pedido</p>
-          <ul>
-            {order.items.slice(0, 4).map((item, index) => (
-              <li key={`${item.name}-${index}`}>
-                <strong>{quantityLabel(item.quantity, item.unit)}</strong>
-                <span>{item.name}</span>
-              </li>
-            ))}
-          </ul>
+          {order.rawOrderText ? <p className={styles.rawOrderText}>{order.rawOrderText}</p> : (
+            <ul>
+              {order.items.slice(0, 4).map((item, index) => (
+                <li key={`${item.name}-${index}`}>
+                  <strong>{quantityLabel(item.quantity, item.unit)}</strong>
+                  <span>{item.name}</span>
+                </li>
+              ))}
+            </ul>
+          )}
           {order.items.length > 4 ? <span className={styles.moreItems}>+{order.items.length - 4} producto(s) más</span> : null}
         </div>
 
         <div className={styles.cardChat}>
           <ConversationLink url={conversationUrl} />
-          <button type="button" className={styles.quoteLink} onClick={() => onQuote(order)}>
+          {!courier ? <button type="button" className={styles.quoteLink} onClick={() => onQuote(order)}>
             <Receipt size={15} /> {order.quote ? "Editar cotización" : "Cotizar"}
-          </button>
+          </button> : null}
         </div>
       </div>
 
@@ -965,7 +978,7 @@ function OrderCard({
         <button type="button" className={styles.detailsButton} onClick={() => onDetails(order)}>
           Ver detalle <ChevronRight size={16} />
         </button>
-        {order.status !== "dispatched" ? (
+        {!courier && order.status !== "dispatched" ? (
           <button type="button" className={styles.printButton} onClick={() => onPrint(order)}>
             <Printer size={17} /> {order.printCount ? "Reimprimir" : "Imprimir"}
           </button>
@@ -1058,6 +1071,7 @@ function OrderModal({
   onQuote,
   onEdit,
   onDelete,
+  courier,
 }: {
   order: Order;
   conversationUrl: string | null;
@@ -1067,6 +1081,7 @@ function OrderModal({
   onQuote: (order: Order) => void;
   onEdit: (order: Order) => void;
   onDelete: (order: Order) => void;
+  courier: boolean;
 }) {
   return (
     <div className={styles.modalBackdrop} role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
@@ -1092,7 +1107,7 @@ function OrderModal({
             <div><dt>Teléfono</dt><dd>{order.customerPhone}</dd></div>
             <div><dt>Cédula</dt><dd>{order.customerDocument || "Sin registrar"}</dd></div>
             <div><dt>Método de pago</dt><dd>{order.paymentMethod || "Sin registrar"}</dd></div>
-            <div className={styles.fullRow}><dt>Dirección</dt><dd>{order.deliveryAddress || "Recoge en tienda"}</dd></div>
+            <div className={styles.fullRow}><dt>Dirección</dt><dd>{order.deliveryType === "recogida" ? "Recoge en tienda" : order.deliveryAddress || "Sin dirección · contactar al cliente"}</dd></div>
             {order.quotedAt && order.quotedTotal !== null ? (
               <div className={styles.fullRow}>
                 <dt>Cotización enviada al cliente</dt>
@@ -1105,7 +1120,7 @@ function OrderModal({
           </dl>
           <div className={styles.detailItems}>
             <h3>Pedido completo</h3>
-            <ol>
+            {order.rawOrderText ? <p className={styles.rawOrderText}>{order.rawOrderText}</p> : <ol>
               {order.items.map((item, index) => (
                 <li key={`${item.name}-${index}`}>
                   <span>{index + 1}</span>
@@ -1113,7 +1128,7 @@ function OrderModal({
                   <p>{item.name}</p>
                 </li>
               ))}
-            </ol>
+            </ol>}
           </div>
           <div className={styles.notesBox}>
             <p>Observaciones</p>
@@ -1140,7 +1155,7 @@ function OrderModal({
           ) : null}
         </div>
         <footer className={styles.modalActions}>
-          {order.status !== "dispatched" ? (
+          {!courier && order.status !== "dispatched" ? (
             <>
               <button type="button" className={styles.detailsButton} onClick={() => onEdit(order)}>
                 <Pencil size={17} /> Editar
@@ -1151,10 +1166,10 @@ function OrderModal({
             </>
           ) : null}
           <ConversationLink url={conversationUrl} variant="button" />
-          <button type="button" className={styles.detailsButton} onClick={() => onQuote(order)}>
+          {!courier ? <button type="button" className={styles.detailsButton} onClick={() => onQuote(order)}>
             <Receipt size={17} /> {order.quote ? "Editar cotización" : "Cotizar"}
-          </button>
-          {order.status !== "dispatched" ? (
+          </button> : null}
+          {!courier && order.status !== "dispatched" ? (
             <button type="button" className={styles.printButton} onClick={() => onPrint(order)}>
               <Printer size={17} /> {order.printCount ? "Reimprimir" : "Imprimir pedido"}
             </button>
@@ -1240,8 +1255,6 @@ function ConfirmModal({
   );
 }
 
-type ItemDraft = { key: number; name: string; quantity: string; unit: string };
-
 function OrderFormModal({
   order,
   credentials,
@@ -1257,6 +1270,10 @@ function OrderFormModal({
 }) {
   /* One key per form, so a double click or a retry after an error never creates two orders. */
   const [requestId] = useState(() => crypto.randomUUID());
+  const [contactId, setContactId] = useState(order?.ghlContactId || "");
+  const [contactQuery, setContactQuery] = useState("");
+  const [contacts, setContacts] = useState<CrmContact[]>([]);
+  const [contactsBusy, setContactsBusy] = useState(false);
   const [name, setName] = useState(order?.customerName || "");
   const [phone, setPhone] = useState(order?.customerPhone || "");
   const [customerDocument, setCustomerDocument] = useState(order?.customerDocument || "");
@@ -1264,71 +1281,59 @@ function OrderFormModal({
   const [address, setAddress] = useState(order?.deliveryAddress || "");
   const [paymentMethod, setPaymentMethod] = useState(order?.paymentMethod || "");
   const [notes, setNotes] = useState(order?.notes || "");
-  const [items, setItems] = useState<ItemDraft[]>(
-    order
-      ? order.items.map((item, index) => ({
-          key: index,
-          name: item.name,
-          quantity: String(item.quantity).replace(".", ","),
-          unit: item.unit || "",
-        }))
-      : [{ key: 0, name: "", quantity: "1", unit: "" }],
-  );
-  const [products, setProducts] = useState<Product[]>([]);
-  const [productQuery, setProductQuery] = useState("");
-  const nextKey = useRef(order?.items.length || 1);
+  const [rawOrderText, setRawOrderText] = useState(order?.rawOrderText || (order ? orderItemsToText(order.items) : ""));
 
   useEffect(() => {
     const controller = new AbortController();
     const timeout = window.setTimeout(() => {
-      const params = new URLSearchParams(productQuery ? { q: productQuery } : {});
-      fetch(`/api/products?${params.toString()}`, {
+      if (order || contactQuery.trim().length < 2) {
+        setContacts([]);
+        return;
+      }
+      setContactsBusy(true);
+      const params = new URLSearchParams({ q: contactQuery.trim() });
+      fetch(`/api/crm/contacts?${params.toString()}`, {
         headers: authHeaders(credentials),
         cache: "no-store",
         signal: controller.signal,
       })
         .then((response) => (response.ok ? response.json() : { products: [] }))
-        .then((body: { products: Product[] }) => setProducts(body.products))
+        .then((body: { contacts: CrmContact[] }) => setContacts(body.contacts || []))
         .catch(() => {
-          /* The catalog only helps typing; free text still works without it. */
-        });
+          setContacts([]);
+        })
+        .finally(() => setContactsBusy(false));
     }, 250);
     return () => {
       window.clearTimeout(timeout);
       controller.abort();
     };
-  }, [credentials, productQuery]);
+  }, [credentials, contactQuery, order]);
 
-  const updateItem = (key: number, patch: Partial<ItemDraft>) => {
-    setItems((current) => current.map((item) => (item.key === key ? { ...item, ...patch } : item)));
-    if (patch.name !== undefined) {
-      setProductQuery(patch.name.trim());
-      const match = products.find((product) => product.name.toLowerCase() === patch.name?.trim().toLowerCase());
-      if (match?.priceUnit) {
-        setItems((current) => current.map((item) => (item.key === key && !item.unit ? { ...item, unit: match.priceUnit || "" } : item)));
-      }
-    }
+  const selectContact = (contact: CrmContact) => {
+    setContactId(contact.id);
+    setName(contact.name);
+    setPhone(contact.phone);
+    setCustomerDocument(contact.document || "");
+    setAddress(contact.address || "");
+    setContactQuery(contact.name || contact.phone);
+    setContacts([]);
   };
 
-  const validItems: OrderItem[] = items
-    .map((item) => ({
-      name: item.name.trim(),
-      quantity: Number(item.quantity.replace(",", ".")),
-      unit: item.unit.trim() || undefined,
-    }))
-    .filter((item) => item.name && item.quantity > 0);
-  const canSubmit =
-    name.trim() && phone.trim().length >= 3 && validItems.length > 0 && (deliveryType === "recogida" || address.trim());
+  const validItems: OrderItem[] = useMemo(() => parseOrderText(rawOrderText), [rawOrderText]);
+  const canSubmit = name.trim() && phone.trim().length >= 3 && validItems.length > 0;
 
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
     if (!canSubmit) return;
     onSave({
       requestId,
+      contactId: contactId || undefined,
       customer: { name: name.trim(), phone: phone.trim(), document: customerDocument.trim() || undefined },
       delivery: { type: deliveryType, address: deliveryType === "domicilio" ? address.trim() : undefined },
       paymentMethod: paymentMethod.trim() || undefined,
       items: validItems,
+      rawOrderText: rawOrderText.trim(),
       notes: notes.trim() || undefined,
     });
   };
@@ -1346,10 +1351,36 @@ function OrderFormModal({
           </button>
         </header>
         <div className={styles.modalBody}>
+          {!order ? (
+            <label className={`${styles.formField} ${styles.formFieldWide}`}>
+              <span>Buscar cliente en el CRM</span>
+              <input
+                value={contactQuery}
+                onChange={(event) => {
+                  setContactQuery(event.target.value);
+                  setContactId("");
+                }}
+                placeholder="Escribe nombre o teléfono"
+                autoFocus
+              />
+              {contactsBusy ? <small>Buscando clientes…</small> : null}
+              {contacts.length ? (
+                <div className={styles.contactResults}>
+                  {contacts.map((contact) => (
+                    <button type="button" key={contact.id} onClick={() => selectContact(contact)}>
+                      <strong>{contact.name || "Cliente sin nombre"}</strong>
+                      <span>{contact.phone}{contact.address ? ` · ${contact.address}` : " · Sin dirección guardada"}</span>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+              {contactId ? <small className={styles.formHint}>Datos precargados desde el CRM.</small> : null}
+            </label>
+          ) : null}
           <div className={styles.formGrid}>
             <label className={styles.formField}>
               <span>Nombre del cliente *</span>
-              <input value={name} onChange={(event) => setName(event.target.value)} required maxLength={160} autoFocus />
+              <input value={name} onChange={(event) => setName(event.target.value)} required maxLength={160} autoFocus={Boolean(order)} />
             </label>
             <label className={styles.formField}>
               <span>Teléfono *</span>
@@ -1380,61 +1411,24 @@ function OrderFormModal({
             </label>
             {deliveryType === "domicilio" ? (
               <label className={`${styles.formField} ${styles.formFieldWide}`}>
-                <span>Dirección y barrio *</span>
-                <input value={address} onChange={(event) => setAddress(event.target.value)} required maxLength={500} />
+                <span>Dirección y barrio</span>
+                <input value={address} onChange={(event) => setAddress(event.target.value)} maxLength={500} placeholder="Puede completarse al despachar" />
+                {!address.trim() ? <small>Sin dirección: el domiciliario deberá contactar al cliente antes de salir.</small> : null}
               </label>
             ) : null}
           </div>
 
           <div className={styles.itemsEditor}>
-            <h3>Productos</h3>
-            <datalist id="catalog-products">
-              {products.map((product) => <option key={product.id} value={product.name} />)}
-            </datalist>
-            {items.map((item, index) => (
-              <div className={styles.itemRow} key={item.key}>
-                <input
-                  aria-label={`Producto ${index + 1}`}
-                  placeholder="Producto (ej: pechuga troceada)"
-                  list="catalog-products"
-                  value={item.name}
-                  maxLength={160}
-                  onChange={(event) => updateItem(item.key, { name: event.target.value })}
-                />
-                <input
-                  aria-label={`Cantidad ${index + 1}`}
-                  inputMode="decimal"
-                  value={item.quantity}
-                  onChange={(event) => updateItem(item.key, { quantity: event.target.value })}
-                />
-                <input
-                  aria-label={`Unidad ${index + 1}`}
-                  placeholder="kg, lb, und"
-                  value={item.unit}
-                  maxLength={40}
-                  onChange={(event) => updateItem(item.key, { unit: event.target.value })}
-                />
-                <button
-                  type="button"
-                  aria-label={`Quitar producto ${index + 1}`}
-                  disabled={items.length === 1}
-                  onClick={() => setItems((current) => current.filter((entry) => entry.key !== item.key))}
-                >
-                  <Trash2 size={16} />
-                </button>
-              </div>
-            ))}
-            <button
-              type="button"
-              className={styles.addItemButton}
-              onClick={() => {
-                const key = nextKey.current;
-                nextKey.current += 1;
-                setItems((current) => [...current, { key, name: "", quantity: "1", unit: "" }]);
-              }}
-            >
-              <Plus size={15} /> Agregar producto
-            </button>
+            <h3>Pedido completo tal como lo envió el cliente</h3>
+            <textarea
+              aria-label="Pedido completo"
+              rows={9}
+              value={rawOrderText}
+              maxLength={20_000}
+              onChange={(event) => setRawOrderText(event.target.value)}
+              placeholder={"Pega aquí el mensaje completo, por ejemplo:\n5 mil de papa\n7 mil de queso\n2 libras de pechuga troceada"}
+            />
+            <p className={styles.formHint}>Una línea por producto. Se aceptan cantidades físicas y por valor, como “5 mil de papa”. El texto se conserva sin reemplazarlo por nombres del catálogo.</p>
           </div>
 
           <label className={styles.formField}>
@@ -1514,12 +1508,12 @@ function PrintTicket({ order, operator }: { order: Order; operator: string | nul
         {order.customerDocument ? <div><dt>Cédula</dt><dd>{order.customerDocument}</dd></div> : null}
         <div><dt>Teléfono</dt><dd>{order.customerPhone}</dd></div>
         <div><dt>Entrega</dt><dd>{deliveryLabel(order.deliveryType)}</dd></div>
-        <div><dt>Dirección</dt><dd>{order.deliveryAddress || "Recoge en tienda"}</dd></div>
+        <div><dt>Dirección</dt><dd>{order.deliveryType === "recogida" ? "Recoge en tienda" : order.deliveryAddress || "FALTA · CONTACTAR AL CLIENTE"}</dd></div>
         {order.paymentMethod ? <div><dt>Pago</dt><dd>{order.paymentMethod}</dd></div> : null}
       </dl>
       <section className={styles.ticketItems}>
         <h2>PRODUCTOS · {order.items.length}</h2>
-        {order.items.map((item, index) => (
+        {order.rawOrderText ? <p className={styles.rawOrderText}>{order.rawOrderText}</p> : order.items.map((item, index) => (
           <div className={styles.ticketItem} key={`${item.name}-${index}`}>
             <span className={styles.ticketCheckbox} />
             <strong>{quantityLabel(item.quantity, item.unit)}</strong>

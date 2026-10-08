@@ -23,7 +23,7 @@ function unavailableOrder() {
 export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
     const access = await getPanelAccess(request);
-    if (!access) return unauthorized();
+    if (!access || access.role !== "operator") return unauthorized();
     const { id } = await context.params;
 
     const parsed = orderEditSchema.safeParse(await request.json().catch(() => null));
@@ -56,6 +56,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
       delivery: input.delivery,
       paymentMethod: input.paymentMethod,
       items: normalizedItems,
+      rawOrderText: input.rawOrderText,
       notes: input.notes,
     };
     const now = new Date().toISOString();
@@ -67,6 +68,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
       input.customer.document,
       input.delivery.address,
       JSON.stringify(normalizedItems),
+      input.rawOrderText,
       input.notes,
     ]
       .filter(Boolean)
@@ -83,6 +85,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
         delivery_type: input.delivery.type,
         delivery_address: input.delivery.type === "domicilio" ? input.delivery.address || null : null,
         items: normalizedItems as unknown as Json,
+        raw_order_text: input.rawOrderText,
         notes: input.notes || null,
         payload_hash: payloadHash(hashInput),
         search_text: searchText,
@@ -123,7 +126,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
 export async function DELETE(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
     const access = await getPanelAccess(request);
-    if (!access) return unauthorized();
+    if (!access || access.role !== "operator") return unauthorized();
     const { id } = await context.params;
     const parsed = actionRequestSchema.safeParse(await request.json().catch(() => null));
     if (!parsed.success) return invalidPayload(parsed.error);

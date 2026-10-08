@@ -1,11 +1,12 @@
 import { getServerEnv } from "@/lib/env";
-import { hashEmbedToken, readBearerToken } from "@/lib/security";
+import { hashEmbedToken, readBearerToken, safeEqual } from "@/lib/security";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 
 export type PanelAccess = {
   locationId: string;
   ghlLocationId: string;
   locationName: string;
+  role: "operator" | "courier";
 };
 
 export async function getPanelAccess(request: Request): Promise<PanelAccess | null> {
@@ -16,13 +17,18 @@ export async function getPanelAccess(request: Request): Promise<PanelAccess | nu
   const tokenHash = hashEmbedToken(token, getServerEnv().embedTokenPepper);
   const { data, error } = await getSupabaseAdmin()
     .from("locations")
-    .select("id, ghl_location_id, name")
+    .select("id, ghl_location_id, name, embed_token_hash, courier_token_hash")
     .eq("ghl_location_id", ghlLocationId)
-    .eq("embed_token_hash", tokenHash)
     .eq("is_active", true)
     .maybeSingle();
 
   if (error) throw error;
   if (!data) return null;
-  return { locationId: data.id, ghlLocationId: data.ghl_location_id, locationName: data.name };
+  const role = safeEqual(data.embed_token_hash, tokenHash)
+    ? "operator"
+    : data.courier_token_hash && safeEqual(data.courier_token_hash, tokenHash)
+      ? "courier"
+      : null;
+  if (!role) return null;
+  return { locationId: data.id, ghlLocationId: data.ghl_location_id, locationName: data.name, role };
 }

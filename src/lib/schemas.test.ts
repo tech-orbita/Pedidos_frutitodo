@@ -30,12 +30,12 @@ describe("ingestOrderSchema", () => {
     expect(parsed.items).toEqual(validOrder.items);
   });
 
-  it("requires an address for delivery", () => {
+  it("allows delivery without an address so dispatch can contact the client", () => {
     const parsed = ingestOrderSchema.safeParse({
       ...validOrder,
       delivery: { type: "domicilio", address: "" },
     });
-    expect(parsed.success).toBe(false);
+    expect(parsed.success).toBe(true);
   });
 
   it("allows pickup without an address", () => {
@@ -44,6 +44,11 @@ describe("ingestOrderSchema", () => {
       delivery: { type: "recogida" },
     });
     expect(parsed.success).toBe(true);
+  });
+
+  it("defaults missing delivery data to an address-pending delivery", () => {
+    const withoutDelivery = Object.fromEntries(Object.entries(validOrder).filter(([key]) => key !== "delivery"));
+    expect(ingestOrderSchema.parse(withoutDelivery).delivery).toEqual({ type: "domicilio" });
   });
 
   it("rejects empty, negative or oversized product lists", () => {
@@ -89,14 +94,15 @@ describe("manualOrderSchema", () => {
     customer: { name: "Don Luis", phone: "3001234567" },
     delivery: { type: "recogida" },
     items: [{ name: "Tomate chonto", quantity: 2, unit: "lb" }],
+    rawOrderText: "2 lb de tomate chonto",
   };
 
   it("accepts a phone order without a GHL contact", () => {
     expect(manualOrderSchema.safeParse(manual).success).toBe(true);
   });
 
-  it("still requires an address for delivery", () => {
-    expect(manualOrderSchema.safeParse({ ...manual, delivery: { type: "domicilio" } }).success).toBe(false);
+  it("allows delivery without an address", () => {
+    expect(manualOrderSchema.safeParse({ ...manual, delivery: { type: "domicilio" } }).success).toBe(true);
   });
 });
 
@@ -108,6 +114,7 @@ describe("orderEditSchema", () => {
     delivery: { type: "domicilio", address: "Calle 5 # 10-20" },
     paymentMethod: "Efectivo",
     items: [{ name: "Tomate chonto", quantity: 2, unit: "lb" }],
+    rawOrderText: "2 lb de tomate chonto",
     notes: "Sin bolsa",
   };
 
@@ -115,8 +122,8 @@ describe("orderEditSchema", () => {
     expect(orderEditSchema.parse(edit)).toMatchObject(edit);
   });
 
-  it("keeps the delivery-address invariant on edits", () => {
-    expect(orderEditSchema.safeParse({ ...edit, delivery: { type: "domicilio" } }).success).toBe(false);
+  it("allows missing delivery addresses on edits", () => {
+    expect(orderEditSchema.safeParse({ ...edit, delivery: { type: "domicilio" } }).success).toBe(true);
     expect(orderEditSchema.safeParse({ ...edit, delivery: { type: "recogida" } }).success).toBe(true);
   });
 });
