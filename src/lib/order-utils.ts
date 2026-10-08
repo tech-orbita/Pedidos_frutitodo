@@ -20,8 +20,8 @@ export function canonicalOrderPayload(input: IngestOrderInput): string {
     contactId: input.contactId,
     conversationId: input.conversationId || null,
     customer: {
-      name: input.customer.name,
-      phone: input.customer.phone,
+      name: input.customer.name || null,
+      phone: input.customer.phone || null,
       document: input.customer.document || null,
     },
     paymentMethod: input.paymentMethod || null,

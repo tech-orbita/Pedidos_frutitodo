@@ -112,7 +112,7 @@ export function cashChange(paymentMethod: string | null, total: number): { tende
 
 /** The WhatsApp message the customer receives; also shown as a preview in the panel. */
 export function formatQuoteMessage(order: Pick<Order, "orderNumber" | "customerName" | "paymentMethod" | "deliveryType">, quote: Quote): string {
-  const firstName = order.customerName.trim().split(/\s+/)[0] || "";
+  const firstName = order.customerName?.trim().split(/\s+/)[0] || "";
   const lines = [
     `Hola ${firstName} 👋 Esta es la cotización de tu pedido ${order.orderNumber} en Frutitodo:`,
     "",

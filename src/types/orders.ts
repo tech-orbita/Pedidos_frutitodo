@@ -14,8 +14,8 @@ export type Order = {
   id: string;
   orderNumber: string;
   sourceEventId: string;
-  customerName: string;
-  customerPhone: string;
+  customerName: string | null;
+  customerPhone: string | null;
   customerDocument: string | null;
   paymentMethod: string | null;
   ghlContactId: string | null;

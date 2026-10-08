@@ -44,8 +44,8 @@ export const ingestOrderSchema = z
     contactId: z.string().trim().min(1).max(128),
     conversationId: optionalText(128),
     customer: z.object({
-      name: z.string().trim().min(1).max(160),
-      phone: z.string().trim().min(3).max(40),
+      name: optionalText(160),
+      phone: optionalText(40),
       document: optionalText(40),
     }),
     delivery: deliverySchema.default({ type: "domicilio" }),
@@ -63,8 +63,8 @@ export const manualOrderSchema = z
     operator: optionalText(80),
     contactId: optionalText(128),
     customer: z.object({
-      name: z.string().trim().min(1).max(160),
-      phone: z.string().trim().min(3).max(40),
+      name: optionalText(160),
+      phone: optionalText(40),
       document: optionalText(40),
     }),
     delivery: deliverySchema,
@@ -81,8 +81,8 @@ export const orderEditSchema = z
     requestId: identifier,
     operator: optionalText(80),
     customer: z.object({
-      name: z.string().trim().min(1).max(160),
-      phone: z.string().trim().min(3).max(40),
+      name: optionalText(160),
+      phone: optionalText(40),
       document: optionalText(40),
     }),
     delivery: deliverySchema,

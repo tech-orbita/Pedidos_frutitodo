@@ -339,7 +339,7 @@ export function OrdersPanel() {
     setSelectedOrder((current) => (current?.id === order.id ? order : current));
     setNotice(
       sent
-        ? `Cotización de ${formatPesos(order.quotedTotal ?? 0)} enviada a ${order.customerName}`
+        ? `Cotización de ${formatPesos(order.quotedTotal ?? 0)} enviada a ${order.customerName || "cliente sin nombre"}`
         : `Cotización de ${order.orderNumber} guardada`,
     );
     void loadData(true);
@@ -910,7 +910,7 @@ function OrderCard({
         <div className={styles.orderHeader}>
           <div>
             <p className={styles.orderNumber}>{order.orderNumber}</p>
-            <h3>{order.customerName}</h3>
+            <h3>{order.customerName || "Cliente sin nombre"}</h3>
           </div>
           <time dateTime={order.receivedAt}>{relativeTime(order.receivedAt)}</time>
         </div>
@@ -934,7 +934,7 @@ function OrderCard({
 
         <dl className={styles.orderInfo}>
           <dt><Phone size={14} /> Teléfono</dt>
-          <dd>{order.customerPhone}</dd>
+          <dd>{order.customerPhone || "Sin registrar"}</dd>
           {order.customerDocument ? (
             <>
               <dt><IdCard size={14} /> Cédula</dt>
@@ -1089,7 +1089,7 @@ function OrderModal({
         <header className={styles.modalHeader}>
           <div>
             <p>{order.orderNumber}</p>
-            <h2 id="order-detail-title">{order.customerName}</h2>
+            <h2 id="order-detail-title">{order.customerName || "Cliente sin nombre"}</h2>
           </div>
           <button type="button" onClick={onClose} aria-label="Cerrar detalle">
             <X size={19} />
@@ -1104,7 +1104,7 @@ function OrderModal({
           </div>
           <dl className={styles.detailInfo}>
             <div><dt>Recibido</dt><dd>{formatDate(order.receivedAt)}</dd></div>
-            <div><dt>Teléfono</dt><dd>{order.customerPhone}</dd></div>
+            <div><dt>Teléfono</dt><dd>{order.customerPhone || "Sin registrar"}</dd></div>
             <div><dt>Cédula</dt><dd>{order.customerDocument || "Sin registrar"}</dd></div>
             <div><dt>Método de pago</dt><dd>{order.paymentMethod || "Sin registrar"}</dd></div>
             <div className={styles.fullRow}><dt>Dirección</dt><dd>{order.deliveryType === "recogida" ? "Recoge en tienda" : order.deliveryAddress || "Sin dirección · contactar al cliente"}</dd></div>
@@ -1321,7 +1321,7 @@ function OrderFormModal({
   };
 
   const validItems: OrderItem[] = useMemo(() => parseOrderText(rawOrderText), [rawOrderText]);
-  const canSubmit = name.trim() && phone.trim().length >= 3 && validItems.length > 0;
+  const canSubmit = validItems.length > 0;
 
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
@@ -1329,7 +1329,7 @@ function OrderFormModal({
     onSave({
       requestId,
       contactId: contactId || undefined,
-      customer: { name: name.trim(), phone: phone.trim(), document: customerDocument.trim() || undefined },
+      customer: { name: name.trim() || undefined, phone: phone.trim() || undefined, document: customerDocument.trim() || undefined },
       delivery: { type: deliveryType, address: deliveryType === "domicilio" ? address.trim() : undefined },
       paymentMethod: paymentMethod.trim() || undefined,
       items: validItems,
@@ -1369,7 +1369,7 @@ function OrderFormModal({
                   {contacts.map((contact) => (
                     <button type="button" key={contact.id} onClick={() => selectContact(contact)}>
                       <strong>{contact.name || "Cliente sin nombre"}</strong>
-                      <span>{contact.phone}{contact.address ? ` · ${contact.address}` : " · Sin dirección guardada"}</span>
+                      <span>{contact.phone || "Sin teléfono"}{contact.address ? ` · ${contact.address}` : " · Sin dirección guardada"}</span>
                     </button>
                   ))}
                 </div>
@@ -1379,12 +1379,12 @@ function OrderFormModal({
           ) : null}
           <div className={styles.formGrid}>
             <label className={styles.formField}>
-              <span>Nombre del cliente *</span>
-              <input value={name} onChange={(event) => setName(event.target.value)} required maxLength={160} autoFocus={Boolean(order)} />
+              <span>Nombre del cliente</span>
+              <input value={name} onChange={(event) => setName(event.target.value)} maxLength={160} autoFocus={Boolean(order)} />
             </label>
             <label className={styles.formField}>
-              <span>Teléfono *</span>
-              <input value={phone} onChange={(event) => setPhone(event.target.value)} required inputMode="tel" maxLength={40} />
+              <span>Teléfono</span>
+              <input value={phone} onChange={(event) => setPhone(event.target.value)} inputMode="tel" maxLength={40} />
             </label>
             <label className={styles.formField}>
               <span>Cédula</span>
@@ -1504,9 +1504,9 @@ function PrintTicket({ order, operator }: { order: Order; operator: string | nul
       </header>
       <dl className={styles.ticketMeta}>
         <div><dt>Recibido</dt><dd>{formatDate(order.receivedAt)}</dd></div>
-        <div><dt>Cliente</dt><dd>{order.customerName}</dd></div>
+        <div><dt>Cliente</dt><dd>{order.customerName || "CLIENTE SIN NOMBRE"}</dd></div>
         {order.customerDocument ? <div><dt>Cédula</dt><dd>{order.customerDocument}</dd></div> : null}
-        <div><dt>Teléfono</dt><dd>{order.customerPhone}</dd></div>
+        <div><dt>Teléfono</dt><dd>{order.customerPhone || "FALTA · COMPLETAR"}</dd></div>
         <div><dt>Entrega</dt><dd>{deliveryLabel(order.deliveryType)}</dd></div>
         <div><dt>Dirección</dt><dd>{order.deliveryType === "recogida" ? "Recoge en tienda" : order.deliveryAddress || "FALTA · CONTACTAR AL CLIENTE"}</dd></div>
         {order.paymentMethod ? <div><dt>Pago</dt><dd>{order.paymentMethod}</dd></div> : null}

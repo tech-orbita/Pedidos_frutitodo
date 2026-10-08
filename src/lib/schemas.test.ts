@@ -51,6 +51,15 @@ describe("ingestOrderSchema", () => {
     expect(ingestOrderSchema.parse(withoutDelivery).delivery).toEqual({ type: "domicilio" });
   });
 
+  it("accepts an order when GHL omits the customer name and phone", () => {
+    const parsed = ingestOrderSchema.parse({
+      ...validOrder,
+      customer: { name: "", phone: "" },
+    });
+    expect(parsed.customer.name).toBeUndefined();
+    expect(parsed.customer.phone).toBeUndefined();
+  });
+
   it("rejects empty, negative or oversized product lists", () => {
     expect(ingestOrderSchema.safeParse({ ...validOrder, items: [] }).success).toBe(false);
     expect(
@@ -104,6 +113,10 @@ describe("manualOrderSchema", () => {
   it("allows delivery without an address", () => {
     expect(manualOrderSchema.safeParse({ ...manual, delivery: { type: "domicilio" } }).success).toBe(true);
   });
+
+  it("allows a CRM order whose contact profile has no name or phone", () => {
+    expect(manualOrderSchema.safeParse({ ...manual, customer: {} }).success).toBe(true);
+  });
 });
 
 describe("orderEditSchema", () => {
@@ -125,6 +138,10 @@ describe("orderEditSchema", () => {
   it("allows missing delivery addresses on edits", () => {
     expect(orderEditSchema.safeParse({ ...edit, delivery: { type: "domicilio" } }).success).toBe(true);
     expect(orderEditSchema.safeParse({ ...edit, delivery: { type: "recogida" } }).success).toBe(true);
+  });
+
+  it("allows operators to leave unavailable contact data pending", () => {
+    expect(orderEditSchema.safeParse({ ...edit, customer: {} }).success).toBe(true);
   });
 });
 

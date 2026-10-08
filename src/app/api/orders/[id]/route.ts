@@ -78,8 +78,8 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     const { data: saved, error: saveError } = await supabase
       .from("orders")
       .update({
-        customer_name: input.customer.name,
-        customer_phone: input.customer.phone,
+        customer_name: input.customer.name || null,
+        customer_phone: input.customer.phone || null,
         customer_document: input.customer.document || null,
         payment_method: input.paymentMethod || null,
         delivery_type: input.delivery.type,

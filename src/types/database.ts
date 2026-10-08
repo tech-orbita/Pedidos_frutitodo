@@ -193,8 +193,8 @@ export type Database = {
           quote_sent_by: string | null
           source: string
           created_at: string
-          customer_name: string
-          customer_phone: string
+          customer_name: string | null
+          customer_phone: string | null
           delivery_address: string | null
           delivery_type: Database["public"]["Enums"]["delivery_type"]
           dispatched_at: string | null
@@ -231,8 +231,8 @@ export type Database = {
           quote_sent_by?: string | null
           source?: string
           created_at?: string
-          customer_name: string
-          customer_phone: string
+          customer_name?: string | null
+          customer_phone?: string | null
           delivery_address?: string | null
           delivery_type: Database["public"]["Enums"]["delivery_type"]
           dispatched_at?: string | null
@@ -269,8 +269,8 @@ export type Database = {
           quote_sent_by?: string | null
           source?: string
           created_at?: string
-          customer_name?: string
-          customer_phone?: string
+          customer_name?: string | null
+          customer_phone?: string | null
           delivery_address?: string | null
           delivery_type?: Database["public"]["Enums"]["delivery_type"]
           dispatched_at?: string | null
@@ -366,8 +366,8 @@ export type Database = {
     Functions: {
       amend_order: {
         Args: {
-          p_customer_name: string
-          p_customer_phone: string
+          p_customer_name: string | null
+          p_customer_phone: string | null
           p_delivery_address: string
           p_delivery_type: Database["public"]["Enums"]["delivery_type"]
           p_ghl_contact_id: string
@@ -410,8 +410,8 @@ export type Database = {
           quote_sent_by: string | null
           source: string
           created_at: string
-          customer_name: string
-          customer_phone: string
+          customer_name: string | null
+          customer_phone: string | null
           delivery_address: string | null
           delivery_type: Database["public"]["Enums"]["delivery_type"]
           dispatched_at: string | null
@@ -461,8 +461,8 @@ export type Database = {
           quote_sent_by: string | null
           source: string
           created_at: string
-          customer_name: string
-          customer_phone: string
+          customer_name: string | null
+          customer_phone: string | null
           delivery_address: string | null
           delivery_type: Database["public"]["Enums"]["delivery_type"]
           dispatched_at: string | null
@@ -492,8 +492,8 @@ export type Database = {
       }
       ingest_order: {
         Args: {
-          p_customer_name: string
-          p_customer_phone: string
+          p_customer_name: string | null
+          p_customer_phone: string | null
           p_delivery_address: string
           p_delivery_type: Database["public"]["Enums"]["delivery_type"]
           p_ghl_contact_id: string
