@@ -34,6 +34,8 @@ export type Order = {
   dispatchedAt: string | null;
   lastAmendedAt: string | null;
   amendmentCount: number;
+  /** What the last printed ticket said; a reprint highlights what changed since then. */
+  printedSnapshot: { rawOrderText: string | null; items: OrderItem[] } | null;
   lastPrintedBy: string | null;
   dispatchedBy: string | null;
   /** Draft or sent quote; `quotedAt` is set only once it reached the customer. */

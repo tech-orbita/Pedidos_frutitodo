@@ -53,7 +53,18 @@ export const ingestOrderSchema = z
     items: itemsSchema,
     rawOrderText: optionalText(20_000),
     notes: z.string().trim().max(2000).optional().nullable(),
+    /* "new" skips the open order: the customer started a separate order after the previous one
+       went into preparation, so it must never be merged into it. */
+    orderAction: z.enum(["update", "new"]).optional(),
+    /* Date of the last GHL message read into this order; the next extraction starts after it. */
+    contextUntil: z.iso.datetime({ offset: true }).optional(),
   });
+
+/* n8n asks which part of the conversation still belongs to an order before extracting it. */
+export const orderContextSchema = z.object({
+  locationId: z.string().trim().min(3).max(128),
+  contactId: z.string().trim().min(1).max(128),
+});
 
 /* Orders taken over the phone and typed in the panel. There is no GHL contact behind them,
    and the panel supplies the idempotency key so a double click creates a single order. */

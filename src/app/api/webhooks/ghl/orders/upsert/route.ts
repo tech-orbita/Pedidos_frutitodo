@@ -1,4 +1,4 @@
-import type { Json } from "@/types/database";
+import type { Database, Json } from "@/types/database";
 import { describeError, invalidPayload, noStoreJson, serverError } from "@/lib/api-response";
 import { formatOrderNumber, payloadHash } from "@/lib/order-utils";
 import { ingestOrderSchema } from "@/lib/schemas";
@@ -8,8 +8,9 @@ import { readWebhookJson } from "@/lib/webhook-request";
 export const runtime = "nodejs";
 
 /**
- * One endpoint for every extraction requested by the GHL agent. The app, not the agent,
- * decides whether the same-day list creates a new order or replaces the active order.
+ * One endpoint for every extraction requested by the GHL agent. n8n marks a list that started
+ * after the previous order went into preparation as `orderAction: "new"`; otherwise the app
+ * replaces the open order, or creates one when the customer has none.
  */
 export async function POST(request: Request) {
   try {
@@ -45,19 +46,26 @@ export async function POST(request: Request) {
       p_conversation_id: input.conversationId || null,
     };
 
-    const { data: amended, error: amendError } = await supabase.rpc("amend_order", rpcInput);
-    if (amendError) throw amendError;
-    const amendment = amended?.[0];
+    /* The customer's wording and the last message read travel outside the RPCs. The text is
+       always replaced so it never describes items the extraction no longer has. */
+    const saveExtraction = async (orderId: string) => {
+      const { error } = await supabase
+        .from("orders")
+        .update({ raw_order_text: input.rawOrderText || null, ...(input.contextUntil ? { context_until: input.contextUntil } : {}) })
+        .eq("id", orderId)
+        .eq("location_id", location.id);
+      if (error) throw error;
+    };
+
+    let amendment: Database["public"]["Functions"]["amend_order"]["Returns"][number] | undefined;
+    if (input.orderAction !== "new") {
+      const { data: amended, error: amendError } = await supabase.rpc("amend_order", rpcInput);
+      if (amendError) throw amendError;
+      amendment = amended?.[0];
+    }
 
     if (amendment && (amendment.outcome === "amended" || amendment.outcome === "duplicate")) {
-      if (amendment.outcome === "amended" && input.rawOrderText) {
-        const { error } = await supabase
-          .from("orders")
-          .update({ raw_order_text: input.rawOrderText })
-          .eq("id", amendment.order_id)
-          .eq("location_id", location.id);
-        if (error) throw error;
-      }
+      if (amendment.outcome === "amended") await saveExtraction(amendment.order_id);
       return noStoreJson({
         accepted: true,
         mode: amendment.outcome === "duplicate" ? "duplicate" : "updated",
@@ -85,17 +93,9 @@ export async function POST(request: Request) {
     if (createError) throw createError;
     const result = created?.[0];
     if (!result) throw new Error("ingest_order returned no result");
-    if (result.payload_conflict) {
-      return noStoreJson({ error: "idempotency_conflict", message: "El identificador ya existe con datos diferentes" }, { status: 409 });
-    }
-    if (result.was_created && input.rawOrderText) {
-      const { error } = await supabase
-        .from("orders")
-        .update({ raw_order_text: input.rawOrderText })
-        .eq("id", result.order_id)
-        .eq("location_id", location.id);
-      if (error) throw error;
-    }
+    /* A differing payload under the same key is the agent re-running the extraction for the
+       same customer message: the order already exists, so report it instead of failing. */
+    if (result.was_created) await saveExtraction(result.order_id);
 
     return noStoreJson(
       {

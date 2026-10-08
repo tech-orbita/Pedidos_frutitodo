@@ -948,7 +948,7 @@
   list-style: none;
 }
 
-.detailItems li {
+.detailItems ol li {
   display: grid;
   grid-template-columns: 28px 92px minmax(0, 1fr);
   align-items: center;
@@ -958,7 +958,7 @@
   font-size: 12px;
 }
 
-.detailItems li > span {
+.detailItems ol li > span {
   display: grid;
   width: 22px;
   height: 22px;
@@ -970,12 +970,12 @@
   font-weight: 800;
 }
 
-.detailItems li strong {
+.detailItems ol li strong {
   color: var(--brand-dark);
   font-size: 11px;
 }
 
-.detailItems li p {
+.detailItems ol li p {
   margin: 0;
   overflow-wrap: anywhere;
 }
@@ -1150,6 +1150,65 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   line-height: 1.55;
+}
+
+.annexLines,
+.annexTicket {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  line-height: 1.45;
+}
+
+.annexLines li,
+.annexTicket li {
+  overflow-wrap: anywhere;
+}
+
+.annexLines li {
+  padding: 4px 8px;
+}
+
+.annexLines .annexAdded {
+  padding: 4px 8px;
+  border-radius: 8px;
+  background: #fff4cc;
+  font-weight: 700;
+}
+
+.annexLines .annexRemoved {
+  padding: 4px 8px;
+  border-radius: 8px;
+  background: #fde8e8;
+  color: #8a1c1c;
+}
+
+.annexTag {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: #1d2a22;
+  color: #fff;
+  font-size: .72rem;
+  font-weight: 800;
+  letter-spacing: .04em;
+}
+
+/* Thermal printers are black only: new lines go bold with an inverted tag. */
+.annexTicket .annexAdded {
+  font-weight: 900;
+}
+
+.annexTicket .annexTag {
+  border-radius: 0;
+  background: #000;
+  color: #fff;
+  font-size: 8pt;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
 }
 
 .itemRow {

@@ -204,6 +204,8 @@ export type Database = {
           id: string
           items: Json
           raw_order_text: string | null
+          context_until: string | null
+          printed_snapshot: Json | null
           last_amended_at: string | null
           last_printed_at: string | null
           location_id: string
@@ -242,6 +244,8 @@ export type Database = {
           id?: string
           items: Json
           raw_order_text?: string | null
+          context_until?: string | null
+          printed_snapshot?: Json | null
           last_amended_at?: string | null
           last_printed_at?: string | null
           location_id: string
@@ -280,6 +284,8 @@ export type Database = {
           id?: string
           items?: Json
           raw_order_text?: string | null
+          context_until?: string | null
+          printed_snapshot?: Json | null
           last_amended_at?: string | null
           last_printed_at?: string | null
           location_id?: string

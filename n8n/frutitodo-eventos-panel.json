@@ -39,6 +39,12 @@
               "name": "CF_ULTIMO_PEDIDO_ESTADO",
               "value": "ultimo_pedido_estado",
               "type": "string"
+            },
+            {
+              "id": "b7e2c9a4-3f61-4d8e-a5b0-6c2d9e1f7a38",
+              "name": "CF_PEDIDO_RESUMEN",
+              "value": "pedido_resumen",
+              "type": "string"
             }
           ]
         },
@@ -107,7 +113,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Eventos que envía la app (N8N_DISPATCH_WEBHOOK_URL): order.printed y order.dispatched.\n// La cotización NO pasa por aquí: el panel la envía directo con la API de GHL.\nconst cfg = $('Config').first().json;\nconst event = $('Webhook').first().json.body || {};\nconst order = event.order || {};\nconst firstName = (order.customerName || '').split(' ')[0] || '';\n\nconst fields = [];\nlet message = null;\n\nif (event.event === 'order.printed') {\n  fields.push([cfg.CF_ULTIMO_PEDIDO_ESTADO, 'en_preparacion']);\n}\n\nif (event.event === 'order.dispatched') {\n  fields.push([cfg.CF_ULTIMO_PEDIDO_ESTADO, 'despachado']);\n  // Texto provisional: Frutitodo debe enviar el mensaje definitivo.\n  message = order.deliveryType === 'recogida'\n    ? `Hola ${firstName} 👋 Tu pedido ${order.orderNumber} ya está listo para recoger en tienda.`\n    : `Hola ${firstName} 👋 Tu pedido ${order.orderNumber} ya va en camino 🛵. ¡Gracias por comprar en Frutitodo!`;\n}\n\nreturn [{\n  json: {\n    event: event.event,\n    contactId: event.ghlContactId,\n    customFields: fields.filter(([key, value]) => key && value).map(([key, value]) => ({ key, field_value: value })),\n    message,\n  },\n}];\n"
+        "jsCode": "// Eventos que envía la app (N8N_DISPATCH_WEBHOOK_URL): order.printed y order.dispatched.\n// La cotización NO pasa por aquí: el panel la envía directo con la API de GHL.\nconst cfg = $('Config').first().json;\nconst event = $('Webhook').first().json.body || {};\nconst order = event.order || {};\nconst firstName = (order.customerName || '').split(' ')[0] || '';\n\nconst fields = [];\nlet message = null;\n\n// Hasta el despacho el cliente puede anexar productos. Al despachar el pedido queda cerrado:\n// se vacía el resumen para que el siguiente pedido empiece limpio.\nif (event.event === 'order.dispatched') {\n  fields.push([cfg.CF_PEDIDO_RESUMEN, '']);\n}\n\nif (event.event === 'order.printed') {\n  fields.push([cfg.CF_ULTIMO_PEDIDO_ESTADO, 'en_preparacion']);\n}\n\nif (event.event === 'order.dispatched') {\n  fields.push([cfg.CF_ULTIMO_PEDIDO_ESTADO, 'despachado']);\n  // Texto provisional: Frutitodo debe enviar el mensaje definitivo.\n  message = order.deliveryType === 'recogida'\n    ? `Hola ${firstName} 👋 Tu pedido ${order.orderNumber} ya está listo para recoger en tienda.`\n    : `Hola ${firstName} 👋 Tu pedido ${order.orderNumber} ya va en camino 🛵. ¡Gracias por comprar en Frutitodo!`;\n}\n\nreturn [{\n  json: {\n    event: event.event,\n    contactId: event.ghlContactId,\n    customFields: fields.filter(([key, value]) => key && value !== null && value !== undefined).map(([key, value]) => ({ key, field_value: value })),\n    message,\n  },\n}];\n"
       },
       "id": "db639f3e-126e-4900-8eaa-35d98df7bd54",
       "name": "Planificar",

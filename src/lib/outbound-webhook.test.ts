@@ -31,6 +31,7 @@ const event: OrderDispatchedEvent = {
     dispatchedAt: "2026-09-09T18:10:00.000Z",
     lastAmendedAt: null,
     amendmentCount: 0,
+    printedSnapshot: null,
     lastPrintedBy: "Isabel",
     dispatchedBy: "Isabel",
     quote: null,

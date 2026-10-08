@@ -6,15 +6,17 @@
 Cliente (WhatsApp)
    │
    ▼
-Agente de GHL reconoce una lista completa, el fin de la selección o un cambio posterior
-   │  ejecuta una sola acción "Enviar Pedido a n8n" con los datos del contacto
+Agente de GHL ejecuta "Enviar Pedido a n8n" cada vez que el cliente envía productos
+   │  (lista, imagen, producto suelto, anexo o corrección), sin esperar a que termine
    ▼
 Workflow GHL → Custom Webhook → n8n  (frutitodo-pedido-ia.json)
-   1. normaliza body/customData, busca la conversación y lee hasta 30 mensajes
-   2. conserva solo los mensajes del día actual en America/Bogota, incluidas imágenes
-   3. OpenAI reconstruye la lista completa del día y separa consultas de precio de compras
-   4. POST único a /orders/upsert; Supabase decide si actualiza el pedido vigente o crea uno
-   5. escribe de vuelta en el contacto: resumen fiel, cédula, método de pago, número y estado
+   1. normaliza body/customData y pregunta a /orders/context por el pedido abierto de hoy
+      (sin despachar) y desde qué instante los mensajes son nuevos (`since`)
+   2. lee hasta 30 mensajes y conserva solo los de hoy en America/Bogota posteriores a `since`
+   3. OpenAI recibe el pedido abierto + los mensajes nuevos y devuelve el pedido actualizado
+      (anexo) o uno nuevo; separa consultas de precio de compras
+   4. POST único a /orders/upsert con `orderAction` y `contextUntil` (último mensaje leído)
+   5. escribe de vuelta en el contacto: resumen del pedido en curso, cédula, método de pago, número y estado
    ▼
 Panel (iframe): Nuevos → En preparación → Despachados · Requiere ayuda · Productos y precios
    │  cotizar (precios del catálogo) → enviar por WhatsApp con la API de GHL
@@ -45,7 +47,7 @@ Agregan a los pedidos: cédula, método de pago, conversación de GHL, origen (I
 
 | Nombre | Clave | Tipo | Quién lo escribe |
 |---|---|---|---|
-| Pedido resumen | `pedido_resumen` | Texto largo | n8n, con el pedido ya extraído y formateado |
+| Pedido resumen | `pedido_resumen` | Texto largo | n8n, con el pedido en curso; se vacía al despachar |
 | Documento de identidad | `documento_de_identidad` | Texto | n8n (la IA lo lee, no lo escribe) |
 | Dirección de envío | `direccion_de_envio` | Texto largo | n8n, solo en domicilios (la IA lo lee, no lo escribe) |
 | Método de pago | `metodo_pago` | Texto | n8n |
@@ -83,7 +85,7 @@ Todos usan un **Custom Webhook** `POST` con estos headers:
 
 ### 4.1 Acción única Enviar Pedido a n8n
 
-**Descripción para pegar en la tool:** `Procesa el pedido de la conversación actual. Úsala al recibir una lista completa o imagen, cuando el cliente termine de agregar productos o cuando modifique un pedido ya enviado.`
+**Descripción para pegar en la tool:** `Registra los productos que el cliente acaba de pedir, agregar, quitar o cambiar.`
 
 - **Disparador:** la workflow action **Enviar Pedido a n8n** ejecutada por el agente. Debe poder ejecutarse más de una vez en la misma conversación.
 - **URL:** `https://<tu-n8n>/webhook/frutitodo-pedido`
@@ -100,11 +102,23 @@ Todos usan un **Custom Webhook** `POST` con estos headers:
 }
 ```
 
-Los mismos valores pueden llegar dentro de `customData` usando estas claves o sus variantes `snake_case`; el nodo **Normalizar entrada** acepta ambas formas. n8n lee los últimos `MESSAGE_LIMIT` mensajes (30 por defecto), descarta todos los que no sean del día actual en `America/Bogota` y usa como idempotencia el último mensaje entrante del cliente.
+Los mismos valores pueden llegar dentro de `customData` usando estas claves o sus variantes `snake_case`; el nodo **Normalizar entrada** acepta ambas formas. n8n lee los últimos `MESSAGE_LIMIT` mensajes (30 por defecto) y usa solo los **nuevos**: del día actual en `America/Bogota` y posteriores a `since`. La idempotencia es el último mensaje entrante del cliente, así que ejecutar la acción dos veces sobre el mismo mensaje no duplica nada.
+
+**Regla de anexo o pedido nuevo** (la decide n8n, nunca el agente):
+
+| Situación | Resultado |
+|---|---|
+| Pedido de hoy en *Nuevos* o *En preparación* | Anexo al mismo pedido. Si ya estaba impreso vuelve a *Nuevos* con "Anexo · reimprimir" y el tiquete marca lo NUEVO y lo que hay que QUITAR |
+| El cliente dice explícitamente "otro pedido", "aparte", "por separado", "para otra dirección" | Pedido nuevo |
+| El último pedido ya fue despachado, o el abierto es de otro día | Pedido nuevo con solo los mensajes posteriores al despacho o a las 00:00 |
+
+`since` es el último mensaje que ya se leyó en el pedido abierto (`orders.context_until`). Sin pedido abierto, es lo más reciente entre las 00:00 de hoy en Bogotá y el último despacho del cliente. Por eso un pedido ya leído o despachado nunca se vuelve a sumar.
 
 Si una línea de la lista no trae cantidad, n8n no la elimina: conserva la frase literal y usa internamente cantidad `1` sin unidad como marcador provisional para que el operario pueda corregirla en el panel.
 
-Configura en el prompt tres disparadores para esa misma acción: (1) lista completa o imagen, (2) el cliente termina de escoger productos uno a uno y (3) agrega, quita o corrige algo después. No configures acciones separadas **Pedido Confirmado** y **Anexo a Pedido**. Las consultas de precio, saludos y mensajes sin intención de compra terminan con `200 ignored` y no crean pedidos ni solicitudes de ayuda.
+El agente ejecuta esta misma acción cada vez que llegan productos, sin preguntar "deseas algo más?". No configures acciones separadas **Pedido Confirmado** y **Anexo a Pedido**.
+
+**Respaldo recomendado por si el agente no ejecuta la acción:** crea un workflow de GHL con disparador *Customer Replied* (canal WhatsApp), una espera de 2 minutos y el mismo Custom Webhook con el mismo body. Si el agente ya lo procesó, n8n no encuentra mensajes nuevos y responde `200 ignored`; si no, registra lo que faltó. Las consultas de precio, saludos y mensajes sin intención de compra terminan con `200 ignored` y no crean pedidos ni solicitudes de ayuda.
 
 ### 4.2 Cliente requiere ayuda
 
@@ -268,7 +282,8 @@ Todos los webhooks usan `Authorization: Bearer <GHL_INGEST_SECRET>`.
 
 | Endpoint | Uso |
 |---|---|
-| `POST /api/webhooks/ghl/orders/upsert` | Consulta Supabase y decide si actualiza el pedido vigente (`pending`/`printed`) o crea uno nuevo |
+| `POST /api/webhooks/ghl/orders/context` | `{ locationId, contactId }` → `openOrder` (pedido de hoy sin despachar: número, si está en preparación y su texto) y `since` |
+| `POST /api/webhooks/ghl/orders/upsert` | `orderAction: "update"` anexa al pedido abierto; `"new"` crea uno nuevo. `contextUntil` guarda el último mensaje leído |
 | `POST /api/webhooks/ghl/orders` | Pedido nuevo (n8n) |
 | `POST /api/webhooks/ghl/orders/amendments` | Ajuste al pedido abierto del contacto |
 | `POST /api/webhooks/ghl/help-requests` | La IA pidió ayuda |
@@ -302,13 +317,14 @@ Respuestas del endpoint de ajustes:
 ## 11. Pruebas manuales sugeridas
 
 1. **Pedido nuevo:** enviar una lista completa → el agente ejecuta la tool sin preguntar cédula, dirección ni pago → aparece en *Nuevos* con "Abrir conversación". En GHL quedan `pedido_resumen`, `ultimo_pedido_numero` y `ultimo_pedido_estado = nuevo`.
-2. **Ajuste antes de imprimir:** pedir un cambio → mismo número, marca "Ajustado por el cliente".
-3. **Ajuste después de imprimir:** imprimir → el pedido pasa a *En preparación* y en GHL queda `en_preparacion`. Pedir un cambio → vuelve a *Nuevos* con **Ajuste · reimprimir**, mismo número, y el tiquete trae la leyenda de ajuste.
-4. **Ajuste después de despachar:** se crea un pedido nuevo con otro número.
-5. **Ayuda:** agregar la etiqueta `requiere_ayuda` a un contacto → tarjeta roja, sonido, título `(1) Ayuda`. "Abrir conversación" lleva al chat. Marcar resuelta.
-6. **Mensaje sin pedido:** enviar una consulta sin productos → no se crea pedido y n8n responde `200 ignored`.
-7. **Cotización:** "Cotizar" → revisar las sugerencias del catálogo → poner precios → "Enviar al cliente" → llega el WhatsApp detallado; la tarjeta muestra "Cotización enviada" y la comanda sale con precios. Volver a abrir el catálogo: los precios usados quedaron guardados.
-7b. **Catálogo:** importar el CSV, buscar "pechuga", filtrar "Sin precio", poner un precio y guardarlo.
-8. **Despachar:** llega el mensaje de "va en camino" y queda `despachado` en GHL.
-9. **Pedido manual:** crear uno → aparece en *Nuevos* con la marca "Manual" → imprimir → despachar.
-10. **Operador:** verificar si `{{user.name}}` llega por el menú. Si no, usar "¿Quién está de turno?" e imprimir para ver "Impreso por".
+2. **Anexo antes de imprimir:** "agrégame 3 lb de tomate" → mismo número, marca "Ajustado por el cliente", sin que el agente pregunte "deseas algo más?".
+3. **Anexo después de imprimir:** imprimir → *En preparación*. Escribir "quiero dos pechugas blancas" → mismo número, vuelve a *Nuevos* con "Anexo · reimprimir"; el detalle y el tiquete marcan la línea como NUEVO. No se abre solicitud de ayuda.
+4. **Pedido aparte:** con un pedido abierto, escribir "hazme otro pedido aparte: 1 kg de arroz" → número nuevo solo con el arroz.
+5. **Después de despachar:** despachar → `pedido_resumen` se vacía. Escribir "quiero dos pechugas" → pedido nuevo solo con las pechugas.
+6. **Ayuda:** agregar la etiqueta `requiere_ayuda` a un contacto → tarjeta roja, sonido, título `(1) Ayuda`. "Abrir conversación" lleva al chat. Marcar resuelta.
+7. **Mensaje sin pedido:** enviar una consulta sin productos → no se crea pedido y n8n responde `200 ignored`.
+8. **Cotización:** "Cotizar" → revisar las sugerencias del catálogo → poner precios → "Enviar al cliente" → llega el WhatsApp detallado; la tarjeta muestra "Cotización enviada" y la comanda sale con precios. Volver a abrir el catálogo: los precios usados quedaron guardados.
+8b. **Catálogo:** importar el CSV, buscar "pechuga", filtrar "Sin precio", poner un precio y guardarlo.
+9. **Despachar:** llega el mensaje de "va en camino" y queda `despachado` en GHL.
+10. **Pedido manual:** crear uno → aparece en *Nuevos* con la marca "Manual" → imprimir → despachar.
+11. **Operador:** verificar si `{{user.name}}` llega por el menú. Si no, usar "¿Quién está de turno?" e imprimir para ver "Impreso por".

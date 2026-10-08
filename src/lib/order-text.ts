@@ -65,3 +65,47 @@ export function orderItemsToText(items: OrderItem[]): string {
     .map((item) => item.rawText?.trim() || `${item.quantity}${item.unit ? ` ${item.unit}` : ""} ${item.name}`.trim())
     .join("\n");
 }
+
+export type OrderTextSource = { rawOrderText: string | null; items: OrderItem[] };
+
+export type OrderLineDiff = {
+  lines: Array<{ text: string; added: boolean }>;
+  removed: string[];
+};
+
+/** The lines a picker reads: the customer's own text when present, otherwise the parsed items. */
+export function orderLines(order: OrderTextSource): string[] {
+  const text = order.rawOrderText?.trim() || orderItemsToText(order.items);
+  return text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+}
+
+function comparableLine(line: string): string {
+  return cleanLine(line)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+}
+
+/**
+ * Compares the order with what the last printed ticket said, so a reprinted annex highlights
+ * exactly what the picker does not have yet. Matching is per line and tolerant to case,
+ * accents and bullets; a changed quantity shows as one new line and one removed line.
+ */
+export function diffOrderLines(printed: OrderTextSource | null, current: OrderTextSource): OrderLineDiff {
+  const currentLines = orderLines(current);
+  if (!printed) return { lines: currentLines.map((text) => ({ text, added: false })), removed: [] };
+
+  const pending = new Map<string, string[]>();
+  for (const line of orderLines(printed)) {
+    const key = comparableLine(line);
+    pending.set(key, [...(pending.get(key) || []), line]);
+  }
+  const lines = currentLines.map((text) => {
+    const matches = pending.get(comparableLine(text));
+    if (!matches?.length) return { text, added: true };
+    matches.shift();
+    return { text, added: false };
+  });
+  return { lines, removed: [...pending.values()].flat() };
+}

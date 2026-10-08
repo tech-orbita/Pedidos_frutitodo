@@ -108,7 +108,7 @@ test("renders the 80 mm ticket and asks for explicit print confirmation", async 
   await expect(ticket.getByText("Aguacate Hass")).toBeVisible();
 });
 
-test("flags an adjustment to a printed order without changing its number", async ({ page }) => {
+test("highlights an annex to a printed order without changing its number", async ({ page }) => {
   await page.route("**/api/orders?**", async (route) => {
     await route.fulfill({
       contentType: "application/json",
@@ -122,6 +122,11 @@ test("flags an adjustment to a printed order without changing its number", async
             printCount: 1,
             lastAmendedAt: "2026-09-09T18:30:00.000Z",
             amendmentCount: 1,
+            rawOrderText: "2 leches deslactosadas Alpina\n1 cubeta de huevos AA\n2 pechugas blancas",
+            printedSnapshot: {
+              rawOrderText: "2 leches deslactosadas Alpina\n1.5 kg de aguacate Hass\n1 cubeta de huevos AA",
+              items: [],
+            },
           },
         ],
         stats,
@@ -131,14 +136,17 @@ test("flags an adjustment to a printed order without changing its number", async
   });
 
   await page.goto("/panel?location=frutitodo-test&token=secret-test-token");
-  await expect(page.getByText("Ajuste · reimprimir").first()).toBeVisible();
+  await expect(page.getByText("Anexo · reimprimir").first()).toBeVisible();
   await expect(page.getByText("FT-000021")).toBeVisible();
 
   await page.getByRole("button", { name: "Reimprimir", exact: true }).click();
   await page.emulateMedia({ media: "print" });
+  const ticket = page.locator(".print-host");
   await expect(
-    page.locator(".print-host").getByText("AJUSTE AL PEDIDO FT-000021 · DESCARTA EL TIQUETE ANTERIOR")
+    ticket.getByText("ANEXO AL PEDIDO FT-000021 · DESCARTA EL TIQUETE ANTERIOR · LO NUEVO VA MARCADO")
   ).toBeVisible();
+  await expect(ticket.locator("li").filter({ hasText: "NUEVO" })).toHaveText("NUEVO2 pechugas blancas");
+  await expect(ticket.locator("li").filter({ hasText: "QUITAR" })).toHaveText("QUITAR1.5 kg de aguacate Hass");
 });
 
 test("filters and opens the complete order detail", async ({ page }) => {
@@ -175,7 +183,7 @@ test("edits a new order from its detail", async ({ page }) => {
   await page.getByRole("button", { name: /Ver detalle/ }).click();
   await page.getByRole("button", { name: "Editar" }).click();
   await expect(page.getByRole("heading", { name: "Editar pedido" })).toBeVisible();
-  await page.getByLabel("Nombre del cliente *").fill("María Fernanda");
+  await page.getByLabel("Nombre del cliente").fill("María Fernanda");
   await page.getByLabel("Observaciones").fill("Entregar en portería");
   await page.getByRole("button", { name: "Guardar cambios" }).click();
 
@@ -252,8 +260,8 @@ test("creates a manual phone order", async ({ page }) => {
 
   await page.goto("/panel?location=frutitodo-test&token=secret-test-token");
   await page.getByRole("button", { name: "Pedido manual" }).click();
-  await page.getByLabel("Nombre del cliente *").fill("Don Luis");
-  await page.getByLabel("Teléfono *").fill("3001234567");
+  await page.getByLabel("Nombre del cliente").fill("Don Luis");
+  await page.getByLabel("Teléfono", { exact: true }).fill("3001234567");
   await page.getByLabel("Pedido completo").fill("2 libras de tomate chonto\n7 mil de queso costeño");
   await page.getByRole("button", { name: "Crear pedido" }).click();
 

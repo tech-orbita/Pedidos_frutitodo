@@ -33,7 +33,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { playAlert, unlockAlerts } from "@/lib/alert-sound";
 import { cashChange, formatPesos } from "@/lib/quote";
 import { DEFAULT_GHL_APP_URL, ghlConversationUrl, needsReprint } from "@/lib/order-utils";
-import { orderItemsToText, parseOrderText } from "@/lib/order-text";
+import { diffOrderLines, orderItemsToText, parseOrderText } from "@/lib/order-text";
 import { resolvePanelAccess } from "@/lib/panel-credentials";
 import type { CredentialIssue, PanelCredentials } from "@/lib/panel-credentials";
 import { normalizeOperator, resolveOperator, saveOperator } from "@/lib/panel-operator";
@@ -850,7 +850,7 @@ function AdjustmentBadge({ order }: { order: Order }) {
   if (needsReprint(order)) {
     return (
       <span className={styles.amendedBadge}>
-        <CircleAlert size={13} /> Ajuste · reimprimir
+        <CircleAlert size={13} /> Anexo · reimprimir
       </span>
     );
   }
@@ -1120,7 +1120,7 @@ function OrderModal({
           </dl>
           <div className={styles.detailItems}>
             <h3>Pedido completo</h3>
-            {order.rawOrderText ? <p className={styles.rawOrderText}>{order.rawOrderText}</p> : <ol>
+            {hasAnnex(order) ? <AnnexLines order={order} /> : order.rawOrderText ? <p className={styles.rawOrderText}>{order.rawOrderText}</p> : <ol>
               {order.items.map((item, index) => (
                 <li key={`${item.name}-${index}`}>
                   <span>{index + 1}</span>
@@ -1488,6 +1488,33 @@ function OperatorModal({
   );
 }
 
+function hasAnnex(order: Order): boolean {
+  const diff = diffOrderLines(order.printedSnapshot, order);
+  return diff.removed.length > 0 || diff.lines.some((line) => line.added);
+}
+
+/* After the ticket was printed the customer added or changed products: the picker already
+   holds the old ticket, so what is new or no longer wanted must stand out. */
+function AnnexLines({ order, ticket = false }: { order: Order; ticket?: boolean }) {
+  const diff = diffOrderLines(order.printedSnapshot, order);
+  return (
+    <ul className={ticket ? styles.annexTicket : styles.annexLines}>
+      {diff.lines.map((line, index) => (
+        <li key={`${line.text}-${index}`} className={line.added ? styles.annexAdded : undefined}>
+          {line.added ? <span className={styles.annexTag}>NUEVO</span> : null}
+          {line.text}
+        </li>
+      ))}
+      {diff.removed.map((text, index) => (
+        <li key={`removed-${text}-${index}`} className={styles.annexRemoved}>
+          <span className={styles.annexTag}>QUITAR</span>
+          <s>{text}</s>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 function PrintTicket({ order, operator }: { order: Order; operator: string | null }) {
   const cash = order.quote ? cashChange(order.paymentMethod, order.quote.total) : null;
   return (
@@ -1498,7 +1525,7 @@ function PrintTicket({ order, operator }: { order: Order; operator: string | nul
         <strong>{order.orderNumber}</strong>
         {needsReprint(order) ? (
           <p className={styles.ticketAmended}>
-            AJUSTE AL PEDIDO {order.orderNumber} · DESCARTA EL TIQUETE ANTERIOR
+            ANEXO AL PEDIDO {order.orderNumber} · DESCARTA EL TIQUETE ANTERIOR · LO NUEVO VA MARCADO
           </p>
         ) : null}
       </header>
@@ -1513,7 +1540,7 @@ function PrintTicket({ order, operator }: { order: Order; operator: string | nul
       </dl>
       <section className={styles.ticketItems}>
         <h2>PRODUCTOS · {order.items.length}</h2>
-        {order.rawOrderText ? <p className={styles.rawOrderText}>{order.rawOrderText}</p> : order.items.map((item, index) => (
+        {hasAnnex(order) ? <AnnexLines order={order} ticket /> : order.rawOrderText ? <p className={styles.rawOrderText}>{order.rawOrderText}</p> : order.items.map((item, index) => (
           <div className={styles.ticketItem} key={`${item.name}-${index}`}>
             <span className={styles.ticketCheckbox} />
             <strong>{quantityLabel(item.quantity, item.unit)}</strong>

@@ -1,10 +1,14 @@
-import type { Database } from "@/types/database";
+import type { Database, Json } from "@/types/database";
 import type { IngestOrderInput } from "@/lib/schemas";
 import type { HelpRequest, Order, OrderItem, Quote } from "@/types/orders";
 import { sha256 } from "@/lib/security";
 
 type OrderRow = Database["public"]["Tables"]["orders"]["Row"];
-type CompatibleOrderRow = Omit<OrderRow, "raw_order_text"> & { raw_order_text?: string | null };
+/* RPCs that return `setof orders` were typed before the newer columns existed. */
+type CompatibleOrderRow = Omit<OrderRow, "raw_order_text" | "context_until" | "printed_snapshot"> & {
+  raw_order_text?: string | null;
+  printed_snapshot?: Json | null;
+};
 type HelpRequestRow = Database["public"]["Tables"]["help_requests"]["Row"];
 
 export const DEFAULT_GHL_APP_URL = "https://app.iaorbita.com";
@@ -75,6 +79,7 @@ export function rowToOrder(row: CompatibleOrderRow): Order {
     dispatchedAt: row.dispatched_at,
     lastAmendedAt: row.last_amended_at,
     amendmentCount: row.amendment_count,
+    printedSnapshot: (row.printed_snapshot as Order["printedSnapshot"] | undefined) ?? null,
     lastPrintedBy: row.last_printed_by,
     dispatchedBy: row.dispatched_by,
     quote: (row.quote as Quote | null) ?? null,

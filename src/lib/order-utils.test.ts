@@ -70,6 +70,7 @@ function orderWith(overrides: Partial<Order>): Order {
     dispatchedAt: null,
     lastAmendedAt: null,
     amendmentCount: 0,
+    printedSnapshot: null,
     lastPrintedBy: null,
     dispatchedBy: null,
     quote: null,
