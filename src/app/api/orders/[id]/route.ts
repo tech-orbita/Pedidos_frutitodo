@@ -134,7 +134,7 @@ export async function DELETE(request: Request, context: { params: Promise<{ id: 
     const supabase = getSupabaseAdmin();
     const { data: current, error: currentError } = await supabase
       .from("orders")
-      .select("id, status, updated_at")
+      .select("id, status, updated_at, ghl_contact_id")
       .eq("id", id)
       .eq("location_id", access.locationId)
       .maybeSingle();
@@ -153,6 +153,18 @@ export async function DELETE(request: Request, context: { params: Promise<{ id: 
       .maybeSingle();
     if (deleteError) throw deleteError;
     if (!deleted) return unavailableOrder();
+
+    /* The order held the only record of which messages were read. Without this mark the next
+       extraction reads the day from midnight and recreates the order that was just deleted. */
+    if (current.ghl_contact_id) {
+      const { error: markError } = await supabase
+        .from("contact_read_marks")
+        .upsert(
+          { location_id: access.locationId, ghl_contact_id: current.ghl_contact_id, read_until: new Date().toISOString(), updated_at: new Date().toISOString() },
+          { onConflict: "location_id,ghl_contact_id" },
+        );
+      if (markError) throw markError;
+    }
 
     return noStoreJson({ deleted: true, id: deleted.id });
   } catch (error) {

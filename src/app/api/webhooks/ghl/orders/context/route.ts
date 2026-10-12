@@ -14,7 +14,8 @@ export const runtime = "nodejs";
  *   is an annex to it, even while it is being prepared.
  * - `since`: only GHL messages after this instant are new. For an open order it is the last
  *   message already read into it; otherwise the later of midnight in Bogota and the last
- *   dispatch, so a dispatched order is never read, or summed, again.
+ *   dispatch, so a dispatched order is never read, or summed, again. Never earlier than the
+ *   contact's read mark, left when an operator deletes an order, so it is not recreated.
  */
 export async function POST(request: Request) {
   try {
@@ -43,6 +44,16 @@ export async function POST(request: Request) {
       .limit(20);
     if (ordersError) throw ordersError;
 
+    const { data: mark, error: markError } = await supabase
+      .from("contact_read_marks")
+      .select("read_until")
+      .eq("location_id", location.id)
+      .eq("ghl_contact_id", input.contactId)
+      .maybeSingle();
+    if (markError) throw markError;
+    const notBeforeMark = (since: string) =>
+      mark && new Date(mark.read_until) > new Date(since) ? mark.read_until : since;
+
     const today = startOfTodayInBogota();
     const open = orders.find(
       (order) => order.status !== "dispatched" && new Date(order.received_at) >= new Date(today),
@@ -54,7 +65,7 @@ export async function POST(request: Request) {
           inPreparation: Boolean(open.first_printed_at),
           text: orderLines({ rawOrderText: open.raw_order_text, items: open.items as OrderItem[] }).join("\n"),
         },
-        since: open.context_until || open.last_amended_at || open.received_at,
+        since: notBeforeMark(open.context_until || open.last_amended_at || open.received_at),
       });
     }
 
@@ -65,7 +76,7 @@ export async function POST(request: Request) {
       .at(-1);
     return noStoreJson({
       openOrder: null,
-      since: lastDispatch && new Date(lastDispatch) > new Date(today) ? lastDispatch : today,
+      since: notBeforeMark(lastDispatch && new Date(lastDispatch) > new Date(today) ? lastDispatch : today),
     });
   } catch (error) {
     console.error("Order context lookup failed", describeError(error));

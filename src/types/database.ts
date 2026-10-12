@@ -39,6 +39,27 @@ export type Database = {
   }
   public: {
     Tables: {
+      contact_read_marks: {
+        Row: {
+          ghl_contact_id: string
+          location_id: string
+          read_until: string
+          updated_at: string
+        }
+        Insert: {
+          ghl_contact_id: string
+          location_id: string
+          read_until: string
+          updated_at?: string
+        }
+        Update: {
+          ghl_contact_id?: string
+          location_id?: string
+          read_until?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       help_requests: {
         Row: {
           conversation_id: string | null
