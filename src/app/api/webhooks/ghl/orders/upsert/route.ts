@@ -1,5 +1,6 @@
 import type { Database, Json } from "@/types/database";
 import { describeError, invalidPayload, noStoreJson, serverError } from "@/lib/api-response";
+import { deliverySchedule, formatScheduledDay, todayInBogota } from "@/lib/delivery-schedule";
 import { formatOrderNumber, payloadHash } from "@/lib/order-utils";
 import { ingestOrderSchema } from "@/lib/schemas";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
@@ -11,6 +12,9 @@ export const runtime = "nodejs";
  * One endpoint for every extraction requested by the GHL agent. n8n marks a list that started
  * after the previous order went into preparation as `orderAction: "new"`; otherwise the app
  * replaces the open order, or creates one when the customer has none.
+ *
+ * `schedule` tells n8n which day the order goes out. A new order received after the cutoff
+ * (7pm, 2pm on holidays) is scheduled for the next day and `afterCutoff` asks n8n to say so.
  */
 export async function POST(request: Request) {
   try {
@@ -48,13 +52,33 @@ export async function POST(request: Request) {
 
     /* The customer's wording and the last message read travel outside the RPCs. The text is
        always replaced so it never describes items the extraction no longer has. */
-    const saveExtraction = async (orderId: string) => {
+    const saveExtraction = async (orderId: string, scheduledFor?: string) => {
       const { error } = await supabase
         .from("orders")
-        .update({ raw_order_text: input.rawOrderText || null, ...(input.contextUntil ? { context_until: input.contextUntil } : {}) })
+        .update({
+          raw_order_text: input.rawOrderText || null,
+          ...(input.contextUntil ? { context_until: input.contextUntil } : {}),
+          ...(scheduledFor ? { scheduled_for: scheduledFor } : {}),
+        })
         .eq("id", orderId)
         .eq("location_id", location.id);
       if (error) throw error;
+    };
+
+    /* An annex keeps the day the order already had; only a new order can move to tomorrow. */
+    const scheduleOf = async (orderId: string, isNew: boolean) => {
+      const { data, error } = await supabase
+        .from("orders")
+        .select("received_at, scheduled_for")
+        .eq("id", orderId)
+        .eq("location_id", location.id)
+        .single();
+      if (error) throw error;
+      return {
+        scheduledFor: data.scheduled_for,
+        scheduledForLabel: formatScheduledDay(data.scheduled_for),
+        afterCutoff: isNew && data.scheduled_for > todayInBogota(new Date(data.received_at)),
+      };
     };
 
     let amendment: Database["public"]["Functions"]["amend_order"]["Returns"][number] | undefined;
@@ -71,6 +95,7 @@ export async function POST(request: Request) {
         mode: amendment.outcome === "duplicate" ? "duplicate" : "updated",
         needsReprint: amendment.needs_reprint,
         order: { id: amendment.order_id, number: formatOrderNumber(amendment.display_sequence), status: "pending" },
+        schedule: await scheduleOf(amendment.order_id, false),
       });
     }
 
@@ -95,13 +120,14 @@ export async function POST(request: Request) {
     if (!result) throw new Error("ingest_order returned no result");
     /* A differing payload under the same key is the agent re-running the extraction for the
        same customer message: the order already exists, so report it instead of failing. */
-    if (result.was_created) await saveExtraction(result.order_id);
+    if (result.was_created) await saveExtraction(result.order_id, deliverySchedule().scheduledFor);
 
     return noStoreJson(
       {
         accepted: true,
         mode: result.was_created ? "created" : "duplicate",
         order: { id: result.order_id, number: formatOrderNumber(result.display_sequence), status: "pending" },
+        schedule: await scheduleOf(result.order_id, result.was_created),
       },
       { status: result.was_created ? 201 : 200 },
     );

@@ -22,6 +22,7 @@ const order = {
   notes: "Si no hay aguacate maduro, llamar antes de reemplazar.",
   status: "pending",
   receivedAt: "2026-09-09T17:55:00.000Z",
+  scheduledFor: "2026-09-09",
   firstPrintedAt: null,
   lastPrintedAt: null,
   printCount: 0,
@@ -385,4 +386,24 @@ test("prices products from the catalog tab", async ({ page }) => {
   await page.getByRole("button", { name: "Guardar AGUACATE HASS" }).click();
   await expect(page.getByRole("button", { name: "Guardar AGUACATE HASS" })).toBeDisabled();
   expect(patched).toMatchObject({ price: 4500, priceUnit: "lb" });
+});
+
+test("marks an order received after the cutoff with the day it goes out", async ({ page }) => {
+  await page.route("**/api/orders?**", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        orders: [{ ...order, receivedAt: "2026-09-10T01:30:00.000Z", scheduledFor: "2099-09-10" }],
+        stats,
+        pagination: { page: 0, pageSize: 50, total: 1, totalPages: 1 },
+      }),
+    });
+  });
+  await page.goto("/panel#location=frutitodo-test&token=secret-test-token");
+  await expect(page.getByText("Para jueves, 10 de septiembre")).toBeVisible();
+
+  await page.getByRole("button", { name: "Imprimir", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "¿La impresión salió correctamente?" })).toBeVisible();
+  await page.emulateMedia({ media: "print" });
+  await expect(page.locator(".print-host").getByText("JUEVES, 10 DE SEPTIEMBRE")).toBeVisible();
 });

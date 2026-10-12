@@ -234,6 +234,7 @@ export type Database = {
           payload_hash: string
           print_count: number
           received_at: string
+          scheduled_for: string
           search_text: string
           source_event_id: string
           status: Database["public"]["Enums"]["order_status"]
@@ -274,6 +275,7 @@ export type Database = {
           payload_hash: string
           print_count?: number
           received_at?: string
+          scheduled_for?: string
           search_text: string
           source_event_id: string
           status?: Database["public"]["Enums"]["order_status"]
@@ -314,6 +316,7 @@ export type Database = {
           payload_hash?: string
           print_count?: number
           received_at?: string
+          scheduled_for?: string
           search_text?: string
           source_event_id?: string
           status?: Database["public"]["Enums"]["order_status"]

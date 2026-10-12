@@ -1,4 +1,5 @@
 import type { Json } from "@/types/database";
+import { deliverySchedule } from "@/lib/delivery-schedule";
 import { invalidPayload, noStoreJson, serverError, unauthorized, describeError } from "@/lib/api-response";
 import { formatOrderNumber, payloadHash, rowToOrder, startOfTodayInBogota } from "@/lib/order-utils";
 import { getPanelAccess } from "@/lib/panel-auth";
@@ -146,7 +147,10 @@ export async function POST(request: Request) {
 
     const { error: rawTextError } = await getSupabaseAdmin()
       .from("orders")
-      .update({ raw_order_text: input.rawOrderText })
+      .update({
+        raw_order_text: input.rawOrderText,
+        ...(result.was_created ? { scheduled_for: deliverySchedule().scheduledFor } : {}),
+      })
       .eq("id", result.order_id)
       .eq("location_id", access.locationId);
     if (rawTextError) throw rawTextError;

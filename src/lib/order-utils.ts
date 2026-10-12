@@ -1,12 +1,14 @@
 import type { Database, Json } from "@/types/database";
 import type { IngestOrderInput } from "@/lib/schemas";
 import type { HelpRequest, Order, OrderItem, Quote } from "@/types/orders";
+import { deliverySchedule } from "@/lib/delivery-schedule";
 import { sha256 } from "@/lib/security";
 
 type OrderRow = Database["public"]["Tables"]["orders"]["Row"];
 /* RPCs that return `setof orders` were typed before the newer columns existed. */
-type CompatibleOrderRow = Omit<OrderRow, "raw_order_text" | "context_until" | "printed_snapshot"> & {
+type CompatibleOrderRow = Omit<OrderRow, "raw_order_text" | "context_until" | "printed_snapshot" | "scheduled_for"> & {
   raw_order_text?: string | null;
+  scheduled_for?: string;
   printed_snapshot?: Json | null;
 };
 type HelpRequestRow = Database["public"]["Tables"]["help_requests"]["Row"];
@@ -73,6 +75,7 @@ export function rowToOrder(row: CompatibleOrderRow): Order {
     notes: row.notes,
     status: row.status,
     receivedAt: row.received_at,
+    scheduledFor: row.scheduled_for ?? deliverySchedule(row.received_at).scheduledFor,
     firstPrintedAt: row.first_printed_at,
     lastPrintedAt: row.last_printed_at,
     printCount: row.print_count,

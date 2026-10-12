@@ -575,6 +575,18 @@
   font-weight: 800;
 }
 
+.scheduledBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  color: #4338ca;
+  background: #eef0ff;
+  font-size: 10px;
+  font-weight: 800;
+}
+
 .cardChat {
   margin-top: 12px;
 }

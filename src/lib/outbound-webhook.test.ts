@@ -25,6 +25,7 @@ const event: OrderDispatchedEvent = {
     notes: null,
     status: "dispatched",
     receivedAt: "2026-09-09T17:55:00.000Z",
+    scheduledFor: "2026-09-09",
     firstPrintedAt: null,
     lastPrintedAt: null,
     printCount: 1,

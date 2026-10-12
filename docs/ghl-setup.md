@@ -41,6 +41,16 @@ El agente de GHL a veces no ejecuta una acción más de una vez en la misma conv
 
 Repetir el procesamiento es seguro: n8n solo lee los mensajes posteriores al último que ya entró al pedido (`/orders/context`). Si el cliente no escribió nada nuevo, el workflow de pedidos responde `200 ignored` en el nodo **¿Hay mensajes nuevos?** sin llamar a OpenAI. Si el agente y el respaldo leen el mismo mensaje a la vez, la llave de idempotencia (último mensaje entrante) evita el pedido doble.
 
+### Pedidos fuera de horario
+
+Se despacha todos los días hasta las 7:00 p. m. y los festivos de Colombia hasta las 2:00 p. m. (`src/lib/delivery-schedule.ts`). La app, no el agente, fija `orders.scheduled_for` al crear un pedido: si llegó después del corte queda para el día siguiente.
+
+- `/orders/upsert` responde `schedule: { scheduledFor, scheduledForLabel, afterCutoff }`. `afterCutoff` solo es `true` en un pedido **nuevo** que pasó al día siguiente; un anexo conserva el día que ya tenía.
+- n8n, en el nodo **¿Para otro día?**, envía por WhatsApp el día exacto de entrega (nodo **Avisar día de entrega**). Este aviso sale siempre, aunque `SEND_CONFIRMATION` sea `false`.
+- `/orders/context` trata como abierto un pedido programado para hoy aunque se haya recibido anoche, así lo que el cliente agregue en la mañana es anexo y no un pedido nuevo.
+- En el panel la tarjeta muestra "Para martes, 13 de octubre" o "Fuera de horario · para hoy", y el tiquete agrega la línea **Despachar**.
+- El prompt del agente también lo dice (sección 11), pero el aviso no depende de él.
+
 Los cuatro workflows de n8n se guardan en la carpeta local `n8n/` (fuera de git porque llevan secretos) y se importan con **Import from File**.
 
 ## 1. Base de datos

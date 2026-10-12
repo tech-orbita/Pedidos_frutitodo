@@ -28,6 +28,8 @@ export type Order = {
   notes: string | null;
   status: OrderStatus;
   receivedAt: string;
+  /** Day it goes out (YYYY-MM-DD, Bogota); the next day when it arrived after the cutoff. */
+  scheduledFor: string;
   firstPrintedAt: string | null;
   lastPrintedAt: string | null;
   printCount: number;

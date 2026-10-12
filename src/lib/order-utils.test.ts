@@ -64,6 +64,7 @@ function orderWith(overrides: Partial<Order>): Order {
     notes: null,
     status: "pending",
     receivedAt: "2026-09-09T17:00:00.000Z",
+    scheduledFor: "2026-09-09",
     firstPrintedAt: null,
     lastPrintedAt: null,
     printCount: 0,

@@ -5,6 +5,7 @@ import {
   ArrowRight,
   Bell,
   BellOff,
+  CalendarClock,
   CheckCircle2,
   ChevronRight,
   CircleAlert,
@@ -31,6 +32,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { playAlert, unlockAlerts } from "@/lib/alert-sound";
+import { formatScheduledDay, todayInBogota } from "@/lib/delivery-schedule";
 import { cashChange, formatPesos } from "@/lib/quote";
 import { DEFAULT_GHL_APP_URL, ghlConversationUrl, needsReprint } from "@/lib/order-utils";
 import { diffOrderLines, orderItemsToText, parseOrderText } from "@/lib/order-text";
@@ -846,6 +848,24 @@ function StatCard({
 
 /* A ticket printed before the adjustment is already wrong in the picker's hands, so this
    has to be louder than the status pill next to it. */
+/* Orders received after the cutoff go out the next day. Returns null for a same-day order. */
+function scheduleLabel(order: Order): string | null {
+  if (order.scheduledFor <= todayInBogota(new Date(order.receivedAt))) return null;
+  const today = todayInBogota();
+  if (order.scheduledFor === today) return "Fuera de horario · para hoy";
+  return `Para ${formatScheduledDay(order.scheduledFor)}`;
+}
+
+function ScheduleBadge({ order }: { order: Order }) {
+  const label = scheduleLabel(order);
+  if (!label) return null;
+  return (
+    <span className={styles.scheduledBadge}>
+      <CalendarClock size={13} /> {label}
+    </span>
+  );
+}
+
 function AdjustmentBadge({ order }: { order: Order }) {
   if (needsReprint(order)) {
     return (
@@ -918,6 +938,7 @@ function OrderCard({
         <div className={styles.badges}>
           <StatusBadge status={order.status} />
           <AdjustmentBadge order={order} />
+          <ScheduleBadge order={order} />
           <span className={styles.deliveryBadge}>
             {order.deliveryType === "domicilio" ? <Truck size={13} /> : <Store size={13} />}
             {deliveryLabel(order.deliveryType)}
@@ -1104,6 +1125,7 @@ function OrderModal({
           </div>
           <dl className={styles.detailInfo}>
             <div><dt>Recibido</dt><dd>{formatDate(order.receivedAt)}</dd></div>
+            {scheduleLabel(order) ? <div><dt>Despachar</dt><dd>{formatScheduledDay(order.scheduledFor)}</dd></div> : null}
             <div><dt>Teléfono</dt><dd>{order.customerPhone || "Sin registrar"}</dd></div>
             <div><dt>Cédula</dt><dd>{order.customerDocument || "Sin registrar"}</dd></div>
             <div><dt>Método de pago</dt><dd>{order.paymentMethod || "Sin registrar"}</dd></div>
@@ -1531,6 +1553,7 @@ function PrintTicket({ order, operator }: { order: Order; operator: string | nul
       </header>
       <dl className={styles.ticketMeta}>
         <div><dt>Recibido</dt><dd>{formatDate(order.receivedAt)}</dd></div>
+        {scheduleLabel(order) ? <div><dt>Despachar</dt><dd>{formatScheduledDay(order.scheduledFor).toUpperCase()}</dd></div> : null}
         <div><dt>Cliente</dt><dd>{order.customerName || "CLIENTE SIN NOMBRE"}</dd></div>
         {order.customerDocument ? <div><dt>Cédula</dt><dd>{order.customerDocument}</dd></div> : null}
         <div><dt>Teléfono</dt><dd>{order.customerPhone || "FALTA · COMPLETAR"}</dd></div>

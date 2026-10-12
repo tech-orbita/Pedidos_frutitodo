@@ -1,4 +1,5 @@
 import { describeError, invalidPayload, noStoreJson, serverError } from "@/lib/api-response";
+import { todayInBogota } from "@/lib/delivery-schedule";
 import { orderLines } from "@/lib/order-text";
 import { formatOrderNumber, startOfTodayInBogota } from "@/lib/order-utils";
 import { orderContextSchema } from "@/lib/schemas";
@@ -10,8 +11,9 @@ export const runtime = "nodejs";
 
 /**
  * Tells n8n where the customer's current order stands before it reads the chat:
- * - `openOrder`: today's order that has not been dispatched. Anything the customer asks for
- *   is an annex to it, even while it is being prepared.
+ * - `openOrder`: the order received today, or scheduled for today or later, that has not been
+ *   dispatched. Anything the customer asks for is an annex to it, even while it is being
+ *   prepared, so a list sent last night after the cutoff still takes this morning's additions.
  * - `since`: only GHL messages after this instant are new. For an open order it is the last
  *   message already read into it; otherwise the later of midnight in Bogota and the last
  *   dispatch, so a dispatched order is never read, or summed, again. Never earlier than the
@@ -37,7 +39,7 @@ export async function POST(request: Request) {
 
     const { data: orders, error: ordersError } = await supabase
       .from("orders")
-      .select("display_sequence, status, items, raw_order_text, received_at, first_printed_at, dispatched_at, last_amended_at, context_until")
+      .select("display_sequence, status, items, raw_order_text, received_at, scheduled_for, first_printed_at, dispatched_at, last_amended_at, context_until")
       .eq("location_id", location.id)
       .eq("ghl_contact_id", input.contactId)
       .order("received_at", { ascending: false })
@@ -55,14 +57,18 @@ export async function POST(request: Request) {
       mark && new Date(mark.read_until) > new Date(since) ? mark.read_until : since;
 
     const today = startOfTodayInBogota();
+    const todayDate = todayInBogota();
     const open = orders.find(
-      (order) => order.status !== "dispatched" && new Date(order.received_at) >= new Date(today),
+      (order) =>
+        order.status !== "dispatched" &&
+        (new Date(order.received_at) >= new Date(today) || order.scheduled_for >= todayDate),
     );
     if (open) {
       return noStoreJson({
         openOrder: {
           number: formatOrderNumber(open.display_sequence),
           inPreparation: Boolean(open.first_printed_at),
+          scheduledFor: open.scheduled_for,
           text: orderLines({ rawOrderText: open.raw_order_text, items: open.items as OrderItem[] }).join("\n"),
         },
         since: notBeforeMark(open.context_until || open.last_amended_at || open.received_at),
