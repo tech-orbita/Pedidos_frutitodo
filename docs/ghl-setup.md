@@ -25,10 +25,23 @@ Panel (iframe): Nuevos → En preparación → Despachados · Requiere ayuda · 
 Panel → n8n (frutitodo-eventos-panel.json) → GHL: estado del pedido y aviso de despacho
 
 IA pide ayuda → etiqueta `requiere_ayuda` → workflow GHL → n8n (frutitodo-solicitud-ayuda.json)
-   → panel: tarjeta roja con botón "Abrir conversación"
+   1. procesa primero la conversación como pedido (por si era un pedido o un anexo)
+   2. panel: tarjeta roja con botón "Abrir conversación" y lo que se registró
+   ▼
+Cada 5 min → n8n (frutitodo-barrido-pedidos.json)
+   procesa las conversaciones que llevan 5 min quietas, por si la IA no envió el pedido
 ```
 
-Los tres workflows de n8n se guardan en la carpeta local `n8n/` (fuera de git porque llevan secretos) y se importan con **Import from File**.
+### Respaldo de la acción del agente
+
+El agente de GHL a veces no ejecuta una acción más de una vez en la misma conversación, aunque el workflow permita reentrada: tras crear un pedido y un anexo, el tercer cambio termina en "Solicitar Ayuda". Hay dos respaldos que llaman al mismo webhook de pedidos:
+
+- **Al pedir ayuda** se procesa primero la conversación. Si había un pedido nuevo o un anexo sin registrar, queda registrado y la tarjeta de ayuda lo dice ("Se registró automáticamente como adición al pedido FT-…"). La tarjeta se crea igual, por si el cliente sí necesitaba a una persona.
+- **El barrido** revisa cada 5 minutos las conversaciones cuyo último mensaje tiene entre 5 y 11 minutos, es decir, cuando el cliente dejó de escribir.
+
+Repetir el procesamiento es seguro: n8n solo lee los mensajes posteriores al último que ya entró al pedido (`/orders/context`). Si el cliente no escribió nada nuevo, el workflow de pedidos responde `200 ignored` en el nodo **¿Hay mensajes nuevos?** sin llamar a OpenAI. Si el agente y el respaldo leen el mismo mensaje a la vez, la llave de idempotencia (último mensaje entrante) evita el pedido doble.
+
+Los cuatro workflows de n8n se guardan en la carpeta local `n8n/` (fuera de git porque llevan secretos) y se importan con **Import from File**.
 
 ## 1. Base de datos
 
@@ -131,6 +144,8 @@ El agente ejecuta esta misma acción cada vez que llegan productos, sin pregunta
   "contactId": "{{contact.id}}",
   "contactName": "{{contact.name}}",
   "contactPhone": "{{contact.phone}}",
+  "contactDocument": "{{contact.documento_de_identidad}}",
+  "contactAddress": "{{contact.direccion_de_envio}}",
   "reason": "La IA solicitó ayuda de un asesor"
 }
 ```
@@ -147,13 +162,15 @@ Si no encuentra la conversación, el enlace abre la ficha del contacto. Si un cl
 
 ## 5. n8n
 
-1. Importa los tres archivos de `n8n/`.
+1. Importa los cuatro archivos de `n8n/`.
 2. Completa el nodo **Config** de cada workflow:
    - `GHL_TOKEN`: Private Integration token de la subcuenta, con permisos `contacts.write`, `conversations.readonly` y `conversations/message.write`.
    - `APP_INGEST_SECRET`: el mismo valor que `GHL_INGEST_SECRET` en Vercel.
    - `OPENAI_API_KEY` y `OPENAI_MODEL`. El valor por defecto es `gpt-5.6-luna`; **confirma el ID exacto del modelo en tu cuenta de OpenAI**.
    - `INBOUND_SECRET` / `APP_WEBHOOK_SECRET`: secretos compartidos.
-3. Activa los tres workflows y copia la **Production URL** de cada Webhook.
+   - En *Solicitud de ayuda* y *Barrido de pedidos*: `PEDIDO_WEBHOOK_URL` (Production URL de *Pedido IA*, `/webhook/frutitodo-pedido`) y `PEDIDO_INBOUND_SECRET` (el `INBOUND_SECRET` de *Pedido IA*). El barrido también necesita `GHL_TOKEN` y `LOCATION_ID`.
+   - `IDLE_MINUTES` (5) es cuánto debe llevar quieta una conversación antes de procesarla; `INTERVAL_MINUTES` debe coincidir con el intervalo del disparador.
+3. Activa los cuatro workflows y copia la **Production URL** de cada Webhook.
 4. En Vercel, en el proyecto `pedidos-frutitodo-eight`, con scope Production:
    - `N8N_DISPATCH_WEBHOOK_URL` = Production URL de *Frutitodo · Eventos del panel → GHL* (`/webhook/frutitodo-eventos`)
    - `N8N_WEBHOOK_SECRET` = el `APP_WEBHOOK_SECRET` de ese workflow
@@ -322,6 +339,8 @@ Respuestas del endpoint de ajustes:
 4. **Pedido aparte:** con un pedido abierto, escribir "hazme otro pedido aparte: 1 kg de arroz" → número nuevo solo con el arroz.
 5. **Después de despachar:** despachar → `pedido_resumen` se vacía. Escribir "quiero dos pechugas" → pedido nuevo solo con las pechugas.
 6. **Ayuda:** agregar la etiqueta `requiere_ayuda` a un contacto → tarjeta roja, sonido, título `(1) Ayuda`. "Abrir conversación" lleva al chat. Marcar resuelta.
+6b. **Tercer cambio:** crear un pedido, anexar algo y pedir otro cambio. Si el agente pide ayuda en vez de ejecutar la acción, la tarjeta dice "Se registró automáticamente como adición al pedido FT-…" y el pedido trae el cambio. Si el agente no hace nada, el barrido lo registra entre 5 y 11 minutos después.
+6c. **Barrido sin cambios:** en una conversación ya registrada, esperar 10 minutos → la ejecución del barrido termina en `200 Sin mensajes nuevos` y el pedido no cambia.
 7. **Mensaje sin pedido:** enviar una consulta sin productos → no se crea pedido y n8n responde `200 ignored`.
 8. **Cotización:** "Cotizar" → revisar las sugerencias del catálogo → poner precios → "Enviar al cliente" → llega el WhatsApp detallado; la tarjeta muestra "Cotización enviada" y la comanda sale con precios. Volver a abrir el catálogo: los precios usados quedaron guardados.
 8b. **Catálogo:** importar el CSV, buscar "pechuga", filtrar "Sin precio", poner un precio y guardarlo.
